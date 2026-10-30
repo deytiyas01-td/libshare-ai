@@ -135,6 +135,9 @@ class BookingItemResponse(BaseModel):
     student_email: str
     student_school: str
     student_grade: str
+    student_verification_status: str
+    student_document_url: Optional[str] = ""
+    student_document_type: Optional[str] = "School ID Card"
     status: str
     start_date: datetime
     due_date: datetime
@@ -148,6 +151,12 @@ class BookingItemResponse(BaseModel):
     damage_notes: Optional[str] = None
     missing_parts: Optional[str] = None
     created_at: datetime
+
+# Message Schema
+class SendMessageRequest(BaseModel):
+    student_id: str
+    title: str
+    message: str
 
 # Restriction Schema
 class SchoolRestrictionCreate(BaseModel):
@@ -172,10 +181,13 @@ class SchoolRestrictionResponse(BaseModel):
 # Notification Schema
 class NotificationResponse(BaseModel):
     id: str
-    user_id: Optional[str]
-    school_id: Optional[str]
+    user_id: Optional[str] = None
+    school_id: Optional[str] = None
+    sender_school_id: Optional[str] = None
+    sender_name: Optional[str] = None
     title: str
     message: str
+    qr_token: Optional[str] = None
     type: str
     is_read: bool
     link: str

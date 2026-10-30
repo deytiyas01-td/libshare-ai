@@ -182,9 +182,12 @@ class Notification(Base):
     id = Column(String, primary_key=True, default=generate_uuid, index=True)
     user_id = Column(String, ForeignKey("profiles.id"), nullable=True, index=True)
     school_id = Column(String, nullable=True, index=True) # For school-level staff notifications
+    sender_school_id = Column(String, nullable=True) # If sent by a school to a student
+    sender_name = Column(String, nullable=True)
     title = Column(String, nullable=False)
     message = Column(Text, nullable=False)
-    type = Column(String, default="general") # "booking_status", "verification", "overdue", "collection", "return"
+    qr_token = Column(String, nullable=True) # Attached QR Pass token for instant view & download
+    type = Column(String, default="general") # "booking_status", "verification", "overdue", "collection", "return", "direct_message"
     is_read = Column(Boolean, default=False)
     link = Column(String, default="")
     created_at = Column(DateTime, default=datetime.utcnow)

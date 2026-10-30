@@ -488,14 +488,13 @@ def create_booking(
             "id": bitem.id,
             "resource_title": res.title,
             "owning_school_id": res.owning_school_id,
-            "due_date": due_date.isoformat()
+            "due_date": due_date.isoformat(),
+            "qr_token": token_hash
         })
 
     db.commit()
 
     # Route notifications ONLY to each relevant owning school!
-    # (Notice: Section 5 strict requirement: "School A should receive only its two relevant requests,
-    # and School B should receive only its own request. School C should not receive unnecessary resource-management notifications.")
     for school_id in affected_schools:
         school_item_count = sum(1 for item in created_items if item["owning_school_id"] == school_id)
         db.add(models.Notification(
@@ -506,14 +505,16 @@ def create_booking(
             link=f"/school/{school_id}/requests"
         ))
 
-    # Notify student of submission
-    db.add(models.Notification(
-        user_id=student_id,
-        title="Borrow Request Submitted",
-        message=f"Your request for {len(created_items)} items across {len(affected_schools)} school(s) is awaiting institutional approvals.",
-        type="booking_status",
-        link="/student/my-bookings"
-    ))
+    # Notify student with their QR tokens for download & verification pass
+    for item_data in created_items:
+        db.add(models.Notification(
+            user_id=student_id,
+            title=f"Booking QR Pass: {item_data['resource_title']}",
+            message=f"Request submitted for '{item_data['resource_title']}'. Your cryptographic QR code pass is generated and ready to view or download.",
+            qr_token=item_data["qr_token"],
+            type="booking_status",
+            link="/student/my-bookings"
+        ))
 
     db.commit()
 
@@ -605,6 +606,8 @@ def get_school_incoming_requests(
             "student_school": student_school,
             "student_grade": student.grade if student else "",
             "student_verification_status": student.verification_status if student else "Unknown",
+            "student_document_url": student.document_url if student else "",
+            "student_document_type": student.document_type if student else "School ID Card",
             "status": bi.status,
             "start_date": bi.start_date,
             "due_date": bi.due_date,
@@ -653,8 +656,11 @@ def decide_request(
 
         db.add(models.Notification(
             user_id=bitem.student_id,
-            title="Resource Request Approved!",
-            message=f"{current_admin['name']} approved your request for '{res.title}'. Your QR Handover Pass is active for pickup.",
+            title=f"Request Approved: {res.title}",
+            message=f"{current_admin['name']} approved your request for '{res.title}'. Your QR Handover Pass is active for pickup and download.",
+            qr_token=bitem.qr_token,
+            sender_school_id=school_id,
+            sender_name=current_admin["name"],
             type="collection",
             link="/student/my-bookings"
         ))
@@ -841,9 +847,93 @@ def verify_and_return(
         "is_late": is_late
     }
 
+@app.get("/api/qr/lookup/{qr_token}")
+def lookup_qr_token(
+    qr_token: str,
+    current_admin: dict = Depends(require_school_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Looks up a QR token and retrieves the student's complete profile,
+    school ID card document, and the corresponding resource details.
+    """
+    token_str = qr_token.strip()
+    bitem = db.query(models.BookingItem).filter(models.BookingItem.qr_token == token_str).first()
+    if not bitem:
+        raise HTTPException(status_code=404, detail="No matching booking item found for this QR token.")
+
+    student = db.query(models.Profile).filter(models.Profile.id == bitem.student_id).first()
+    resource = db.query(models.Resource).filter(models.Resource.id == bitem.resource_id).first()
+
+    return {
+        "booking_item": {
+            "id": bitem.id,
+            "status": bitem.status,
+            "owning_school_id": bitem.owning_school_id,
+            "owning_school_name": bitem.resource.owning_school.name if (bitem.resource and bitem.resource.owning_school) else bitem.owning_school_id,
+            "qr_action": bitem.qr_action,
+            "start_date": bitem.start_date,
+            "due_date": bitem.due_date,
+            "pre_collection_condition": bitem.pre_collection_condition,
+            "post_return_condition": bitem.post_return_condition,
+        },
+        "student": {
+            "id": student.id if student else "",
+            "full_name": student.full_name if student else "Unknown Student",
+            "email": student.email if student else "",
+            "school_id": student.school_id if student else "",
+            "school_name": student.school.name if (student and student.school) else "Partner Institution",
+            "grade": student.grade if student else "",
+            "age": student.age if student else 16,
+            "phone": student.phone if student else "",
+            "verification_status": student.verification_status if student else "Unknown",
+            "document_url": student.document_url if student else "",
+            "document_type": student.document_type if student else "School ID Card"
+        },
+        "resource": {
+            "id": resource.id if resource else "",
+            "title": resource.title if resource else "Resource",
+            "category": resource.category if resource else "Equipment",
+            "image_url": resource.image_url if resource else "",
+            "location_room": resource.location_room if resource else "Main Facility",
+            "usage_rules": resource.usage_rules if resource else ""
+        }
+    }
+
 # ==========================================
-# STUDENT IDENTITY VERIFICATION
+# STUDENT IDENTITY VERIFICATION & MESSAGING
 # ==========================================
+@app.post("/api/school/{school_id}/message-student")
+def message_student(
+    school_id: str,
+    msg_req: schemas.SendMessageRequest,
+    current_admin: dict = Depends(require_school_admin),
+    db: Session = Depends(get_db)
+):
+    if current_admin["school_id"] != school_id:
+        raise HTTPException(status_code=403, detail="Access Denied.")
+
+    student = db.query(models.Profile).filter(models.Profile.id == msg_req.student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+
+    school = db.query(models.School).filter(models.School.id == school_id).first()
+    school_name = school.name if school else current_admin["name"]
+
+    notif = models.Notification(
+        user_id=student.id,
+        sender_school_id=school_id,
+        sender_name=school_name,
+        title=msg_req.title,
+        message=msg_req.message,
+        type="direct_message",
+        link="/student/profile"
+    )
+    db.add(notif)
+    db.commit()
+
+    return {"message": "Notification dispatched directly to student.", "student_name": student.full_name}
+
 @app.get("/api/school/{school_id}/students/verification")
 def list_pending_verifications(
     school_id: str,
@@ -854,10 +944,8 @@ def list_pending_verifications(
     if current_admin["school_id"] != school_id:
         raise HTTPException(status_code=403, detail="Access Denied.")
 
-    query = db.query(models.Profile).filter(
-        models.Profile.role == "student",
-        models.Profile.school_id == school_id
-    )
+    # All students registered at this school OR who requested items from this school OR all partner students for cross verification
+    query = db.query(models.Profile).filter(models.Profile.role == "student")
 
     if status_filter != "all":
         query = query.filter(models.Profile.verification_status == status_filter)
@@ -869,6 +957,8 @@ def list_pending_verifications(
             "id": s.id,
             "full_name": s.full_name,
             "email": s.email,
+            "school_id": s.school_id,
+            "school_name": s.school.name if s.school else "Independent Student",
             "grade": s.grade,
             "age": s.age,
             "verification_status": s.verification_status,

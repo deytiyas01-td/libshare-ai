@@ -19,7 +19,12 @@ import {
   BarChart3,
   RefreshCw,
   Eye,
-  Sliders
+  Sliders,
+  Lock,
+  Mail,
+  Send,
+  MessageSquare,
+  ArrowRight
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -39,6 +44,11 @@ export default function SchoolDashboardPage() {
   const [restrictions, setRestrictions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Password Login state for School Portal Gate (Direct User Requirement!)
+  const [schoolPassword, setSchoolPassword] = useState('');
+  const [authError, setAuthError] = useState(null);
+  const [authenticating, setAuthenticating] = useState(false);
 
   // Scanner Modal
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -67,6 +77,13 @@ export default function SchoolDashboardPage() {
   // Student Document Preview Modal
   const [previewStudent, setPreviewStudent] = useState(null);
 
+  // Direct Message to Student Modal (Direct User Requirement!)
+  const [messageStudentModalOpen, setMessageStudentModalOpen] = useState(false);
+  const [targetStudentForMessage, setTargetStudentForMessage] = useState(null);
+  const [messageTitle, setMessageTitle] = useState('Important Notice Regarding Your Borrowed Resource');
+  const [messageBody, setMessageBody] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+
   // New Restriction Form
   const [newRestriction, setNewRestriction] = useState({
     rule_description: '',
@@ -76,6 +93,21 @@ export default function SchoolDashboardPage() {
   });
 
   const isCurrentAdmin = user && user.role === 'school_admin' && user.school_id === schoolId;
+
+  const schoolNames = {
+    'school-a': 'Greenwood High School (School A)',
+    'school-b': 'St. Xavier Academy (School B)',
+    'school-c': 'Delhi Model Senior Secondary (School C)',
+  };
+
+  const defaultPasswords = {
+    'school-a': 'WeCodeCoders1',
+    'school-b': 'WeCodeCoders2',
+    'school-c': 'WeCodeCoders3',
+  };
+
+  const currentSchoolTitle = schoolNames[schoolId] || 'Institutional Portal';
+  const expectedDemoPassword = defaultPasswords[schoolId] || 'WeCodeCoders1';
 
   useEffect(() => {
     loadDashboardData();
@@ -115,21 +147,29 @@ export default function SchoolDashboardPage() {
     }
   };
 
-  const handleQuickLoginAsThisSchool = async () => {
-    let password = 'WeCodeCoders1';
-    if (schoolId === 'school-b') password = 'WeCodeCoders2';
-    if (schoolId === 'school-c') password = 'WeCodeCoders3';
+  const handleSchoolPasswordLogin = async (e) => {
+    e?.preventDefault();
+    if (!schoolPassword.trim()) {
+      setAuthError('Please enter the school coordinator password.');
+      return;
+    }
+
+    setAuthenticating(true);
+    setAuthError(null);
 
     try {
       await login({
         portal_type: 'school',
         email_or_school: schoolId,
         school_id: schoolId,
-        password: password,
+        password: schoolPassword.trim(),
       });
+      setSchoolPassword('');
       loadDashboardData();
-    } catch (e) {
-      setError(e.message || 'Login failed');
+    } catch (err) {
+      setAuthError(err.message || 'Invalid administrator password.');
+    } finally {
+      setAuthenticating(false);
     }
   };
 
@@ -160,6 +200,34 @@ export default function SchoolDashboardPage() {
       if (previewStudent) setPreviewStudent(null);
     } catch (e) {
       alert(e.message || 'Student verification update failed');
+    }
+  };
+
+  const handleOpenMessageModal = (student) => {
+    setTargetStudentForMessage(student);
+    setMessageTitle(`Message from ${currentSchoolTitle}`);
+    setMessageBody('');
+    setMessageStudentModalOpen(true);
+  };
+
+  const handleSendMessageToStudent = async (e) => {
+    e.preventDefault();
+    if (!targetStudentForMessage || !messageBody.trim()) return;
+
+    setSendingMessage(true);
+    try {
+      await api.school.messageStudent(
+        schoolId,
+        targetStudentForMessage.id,
+        messageTitle.trim(),
+        messageBody.trim()
+      );
+      setMessageStudentModalOpen(false);
+      alert(`Notification sent directly to ${targetStudentForMessage.full_name || 'student'}'s notification center!`);
+    } catch (err) {
+      alert(err.message || 'Failed to send notification');
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -210,618 +278,690 @@ export default function SchoolDashboardPage() {
     }
   };
 
-  const schoolNames = {
-    'school-a': 'Greenwood High School (School A)',
-    'school-b': 'St. Xavier Academy (School B)',
-    'school-c': 'Delhi Model Senior Secondary (School C)',
-  };
-
-  const currentSchoolTitle = schoolNames[schoolId] || 'Institutional Portal';
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 text-slate-800 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto space-y-8">
-        {/* School Header & Role Banner */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+        {/* School Header Banner */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-xs">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-teal-500/20 text-teal-400 border border-teal-500/30 flex items-center justify-center font-bold text-2xl shadow-lg">
+              <div className="w-16 h-16 rounded-2xl bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center font-bold text-2xl shadow-xs">
                 <School className="w-8 h-8" />
               </div>
               <div>
-                <div className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-teal-500/20 text-teal-300 mb-1">
+                <div className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-teal-100 text-teal-800 border border-teal-200 mb-1">
                   OFFICIAL INSTITUTIONAL DASHBOARD
                 </div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
                   {currentSchoolTitle}
                 </h1>
-                <p className="text-xs text-slate-400 mt-1">
-                  Isolated inventory management, independent request approvals, and QR handover desk
+                <p className="text-xs text-slate-500 mt-1">
+                  Sovereign inventory management, incoming student requests, ID card verification, and QR station
                 </p>
               </div>
             </div>
 
-            {/* Admin Authentication Banner */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-              {!isCurrentAdmin ? (
-                <button
-                  type="button"
-                  onClick={handleQuickLoginAsThisSchool}
-                  className="px-4 py-2.5 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-teal-500/20"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  1-Click Sign In as {schoolId.toUpperCase()} Staff
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setScannerOpen(true)}
-                  className="px-5 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-teal-500/20 transition-all"
-                >
-                  <QrCode className="w-4 h-4" />
-                  Open QR Handover & Return Station
-                </button>
-              )}
-            </div>
+            {/* Quick Action Button */}
+            {isCurrentAdmin && (
+              <button
+                type="button"
+                onClick={() => setScannerOpen(true)}
+                className="px-5 py-3 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md shadow-teal-600/20 transition-all cursor-pointer"
+              >
+                <QrCode className="w-4 h-4" />
+                Staff QR Handover & Return Station
+              </button>
+            )}
           </div>
 
           {/* Quick KPI Strip */}
           {stats && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-6 border-t border-slate-800">
-              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80">
-                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Total Assets</div>
-                <div className="text-xl font-extrabold text-white mt-0.5">{stats.total_resources}</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-6 border-t border-slate-100">
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Total Assets</div>
+                <div className="text-2xl font-black text-slate-900 mt-0.5">{stats.total_resources}</div>
               </div>
-              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80">
-                <div className="text-[10px] text-emerald-400 uppercase tracking-wider font-semibold">Available</div>
-                <div className="text-xl font-extrabold text-emerald-400 mt-0.5">{stats.available_resources}</div>
+              <div className="bg-emerald-50/60 p-3.5 rounded-2xl border border-emerald-200">
+                <div className="text-[10px] text-emerald-800 uppercase tracking-wider font-bold">Available</div>
+                <div className="text-2xl font-black text-emerald-700 mt-0.5">{stats.available_resources}</div>
               </div>
-              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80">
-                <div className="text-[10px] text-blue-400 uppercase tracking-wider font-semibold">Borrowed</div>
-                <div className="text-xl font-extrabold text-blue-400 mt-0.5">{stats.borrowed_resources}</div>
+              <div className="bg-blue-50/60 p-3.5 rounded-2xl border border-blue-200">
+                <div className="text-[10px] text-blue-800 uppercase tracking-wider font-bold">Active Loans</div>
+                <div className="text-2xl font-black text-blue-700 mt-0.5">{stats.borrowed_resources}</div>
               </div>
-              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80">
-                <div className="text-[10px] text-amber-400 uppercase tracking-wider font-semibold">Pending Requests</div>
-                <div className="text-xl font-extrabold text-amber-400 mt-0.5">{stats.pending_requests}</div>
+              <div className="bg-amber-50/60 p-3.5 rounded-2xl border border-amber-200">
+                <div className="text-[10px] text-amber-800 uppercase tracking-wider font-bold">Pending Requests</div>
+                <div className="text-2xl font-black text-amber-700 mt-0.5">{stats.pending_requests}</div>
               </div>
-              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80">
-                <div className="text-[10px] text-rose-400 uppercase tracking-wider font-semibold">Overdue</div>
-                <div className="text-xl font-extrabold text-rose-400 mt-0.5">{stats.overdue_items}</div>
+              <div className="bg-rose-50/60 p-3.5 rounded-2xl border border-rose-200">
+                <div className="text-[10px] text-rose-800 uppercase tracking-wider font-bold">Overdue Items</div>
+                <div className="text-2xl font-black text-rose-700 mt-0.5">{stats.overdue_items}</div>
               </div>
-              <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80">
-                <div className="text-[10px] text-teal-400 uppercase tracking-wider font-semibold">Utilization</div>
-                <div className="text-xl font-extrabold text-teal-400 mt-0.5">{stats.utilization_rate}%</div>
+              <div className="bg-teal-50/60 p-3.5 rounded-2xl border border-teal-200">
+                <div className="text-[10px] text-teal-800 uppercase tracking-wider font-bold">Utilization %</div>
+                <div className="text-2xl font-black text-teal-700 mt-0.5">{stats.utilization_rate}%</div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Dashboard Navigation Tabs */}
-        <div className="flex border-b border-slate-800 overflow-x-auto scrollbar-none gap-2 text-xs font-semibold">
-          <button
-            onClick={() => setActiveTab('requests')}
-            className={`flex items-center gap-2 pb-3 px-4 border-b-2 transition-colors shrink-0 ${
-              activeTab === 'requests'
-                ? 'border-teal-400 text-teal-400'
-                : 'border-transparent text-slate-400 hover:text-white'
-            }`}
-          >
-            <Inbox className="w-4 h-4" />
-            Incoming Requests
-            {requests.filter((r) => r.status === 'Requested').length > 0 && (
-              <span className="px-1.5 py-0.2 bg-amber-500 text-slate-950 text-[10px] font-bold rounded-full">
-                {requests.filter((r) => r.status === 'Requested').length}
-              </span>
+        {/* PASSWORD LOGIN GATE FOR THIS SCHOOL (Direct User Requirement: "there is no field of password login for schools where i need to give password to access schools portal it should be included") */}
+        {!isCurrentAdmin ? (
+          <div className="bg-white border-2 border-teal-500/30 rounded-3xl p-8 max-w-xl mx-auto shadow-xl text-center space-y-6">
+            <div className="w-14 h-14 rounded-2xl bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center mx-auto">
+              <Lock className="w-7 h-7" />
+            </div>
+
+            <div>
+              <h2 className="text-xl font-extrabold text-slate-900">Coordinator Password Required</h2>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                Please enter the institutional password to access <strong>{currentSchoolTitle}</strong>'s private requests, verifications, and inventory controls.
+              </p>
+            </div>
+
+            {authError && (
+              <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-xs text-rose-700 flex items-center gap-2 text-left">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{authError}</span>
+              </div>
             )}
-          </button>
 
-          <button
-            onClick={() => setActiveTab('inventory')}
-            className={`flex items-center gap-2 pb-3 px-4 border-b-2 transition-colors shrink-0 ${
-              activeTab === 'inventory'
-                ? 'border-teal-400 text-teal-400'
-                : 'border-transparent text-slate-400 hover:text-white'
-            }`}
-          >
-            <Package className="w-4 h-4" />
-            Inventory & Asset Management ({inventory.length})
-          </button>
+            <form onSubmit={handleSchoolPasswordLogin} className="space-y-4 text-left max-w-md mx-auto">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Institutional Coordinator Password
+                </label>
+                <div className="relative">
+                  <input
+                    type="password"
+                    required
+                    value={schoolPassword}
+                    onChange={(e) => setSchoolPassword(e.target.value)}
+                    placeholder="Enter password..."
+                    className="w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-teal-600 focus:bg-white"
+                  />
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                </div>
+              </div>
 
-          <button
-            onClick={() => setActiveTab('verifications')}
-            className={`flex items-center gap-2 pb-3 px-4 border-b-2 transition-colors shrink-0 ${
-              activeTab === 'verifications'
-                ? 'border-teal-400 text-teal-400'
-                : 'border-transparent text-slate-400 hover:text-white'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            Student Verifications
-            {verifications.filter((v) => v.verification_status === 'Pending').length > 0 && (
-              <span className="px-1.5 py-0.2 bg-teal-500 text-slate-950 text-[10px] font-bold rounded-full">
-                {verifications.filter((v) => v.verification_status === 'Pending').length}
-              </span>
-            )}
-          </button>
+              {/* Demo Password Pill */}
+              <div className="bg-slate-100 p-3 rounded-xl text-xs text-slate-600 border border-slate-200 flex items-center justify-between">
+                <span>Public Demo Password:</span>
+                <button
+                  type="button"
+                  onClick={() => setSchoolPassword(expectedDemoPassword)}
+                  className="px-2.5 py-1 bg-white hover:bg-teal-50 text-teal-800 font-mono font-bold rounded-lg border border-teal-200 text-xs shadow-xs"
+                >
+                  ⚡ Fill "{expectedDemoPassword}"
+                </button>
+              </div>
 
-          <button
-            onClick={() => setActiveTab('reports')}
-            className={`flex items-center gap-2 pb-3 px-4 border-b-2 transition-colors shrink-0 ${
-              activeTab === 'reports'
-                ? 'border-teal-400 text-teal-400'
-                : 'border-transparent text-slate-400 hover:text-white'
-            }`}
-          >
-            <FileCheck className="w-4 h-4" />
-            Condition & Incident Reports
-          </button>
-
-          <button
-            onClick={() => setActiveTab('restrictions')}
-            className={`flex items-center gap-2 pb-3 px-4 border-b-2 transition-colors shrink-0 ${
-              activeTab === 'restrictions'
-                ? 'border-teal-400 text-teal-400'
-                : 'border-transparent text-slate-400 hover:text-white'
-            }`}
-          >
-            <Sliders className="w-4 h-4" />
-            School Restrictions ({restrictions.length})
-          </button>
-        </div>
-
-        {/* TAB 1: INCOMING REQUESTS (Section 5 & 6) */}
-        {activeTab === 'requests' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white">
-                Borrow Requests Routed to {schoolNames[schoolId] || 'This Institution'}
-              </h3>
               <button
-                type="button"
-                onClick={loadDashboardData}
-                className="p-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-teal-400 text-xs flex items-center gap-1"
+                type="submit"
+                disabled={authenticating}
+                className="w-full py-3 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold rounded-xl text-xs shadow-md shadow-teal-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
-                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+                {authenticating ? 'Verifying...' : 'Unlock Coordinator Portal'}
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        ) : (
+          /* AUTHENTICATED SCHOOL DASHBOARD TABS */
+          <>
+            {/* Navigation Tabs */}
+            <div className="flex border-b border-slate-200 overflow-x-auto scrollbar-none gap-2 text-xs font-bold">
+              <button
+                onClick={() => setActiveTab('requests')}
+                className={`flex items-center gap-2 pb-3.5 px-4 border-b-2 transition-colors shrink-0 cursor-pointer ${
+                  activeTab === 'requests'
+                    ? 'border-teal-600 text-teal-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Inbox className="w-4 h-4" />
+                Incoming Requests
+                {requests.filter((r) => r.status === 'Requested').length > 0 && (
+                  <span className="px-2 py-0.5 bg-amber-500 text-white text-[10px] font-black rounded-full">
+                    {requests.filter((r) => r.status === 'Requested').length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('inventory')}
+                className={`flex items-center gap-2 pb-3.5 px-4 border-b-2 transition-colors shrink-0 cursor-pointer ${
+                  activeTab === 'inventory'
+                    ? 'border-teal-600 text-teal-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Package className="w-4 h-4" />
+                Inventory & Assets ({inventory.length})
+              </button>
+
+              <button
+                onClick={() => setActiveTab('verifications')}
+                className={`flex items-center gap-2 pb-3.5 px-4 border-b-2 transition-colors shrink-0 cursor-pointer ${
+                  activeTab === 'verifications'
+                    ? 'border-teal-600 text-teal-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                Student ID Verifications ({verifications.length})
+              </button>
+
+              <button
+                onClick={() => setActiveTab('reports')}
+                className={`flex items-center gap-2 pb-3.5 px-4 border-b-2 transition-colors shrink-0 cursor-pointer ${
+                  activeTab === 'reports'
+                    ? 'border-teal-600 text-teal-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <FileCheck className="w-4 h-4" />
+                Condition & Inspection Reports
+              </button>
+
+              <button
+                onClick={() => setActiveTab('restrictions')}
+                className={`flex items-center gap-2 pb-3.5 px-4 border-b-2 transition-colors shrink-0 cursor-pointer ${
+                  activeTab === 'restrictions'
+                    ? 'border-teal-600 text-teal-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Sliders className="w-4 h-4" />
+                Borrowing Restrictions ({restrictions.length})
               </button>
             </div>
 
-            {!isCurrentAdmin ? (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-xs text-slate-400">
-                🔒 You must sign in as <strong>{currentSchoolTitle}</strong> administrator to approve or reject requests.
-                <div className="mt-3">
+            {/* TAB 1: INCOMING REQUESTS (Shows Student ID Card + Actions + Message Button) */}
+            {activeTab === 'requests' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      Incoming Resource Borrow Requests
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Requests routed strictly to {currentSchoolTitle}. Student ID cards can be inspected before approval.
+                    </p>
+                  </div>
                   <button
-                    onClick={handleQuickLoginAsThisSchool}
-                    className="px-4 py-2 bg-teal-500 text-slate-950 font-bold rounded-xl text-xs"
+                    type="button"
+                    onClick={loadDashboardData}
+                    className="p-2 bg-white border border-slate-200 rounded-xl text-slate-600 hover:text-teal-700 text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
                   >
-                    1-Click Coordinator Sign In
+                    <RefreshCw className="w-3.5 h-3.5" /> Refresh List
                   </button>
                 </div>
-              </div>
-            ) : requests.length === 0 ? (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-xs text-slate-500">
-                No incoming requests currently queued for this school.
-              </div>
-            ) : (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden text-xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
-                      <tr>
-                        <th className="py-3 px-4 font-semibold">Resource Requested</th>
-                        <th className="py-3 px-4 font-semibold">Student / School</th>
-                        <th className="py-3 px-4 font-semibold">Verification Status</th>
-                        <th className="py-3 px-4 font-semibold">Status</th>
-                        <th className="py-3 px-4 font-semibold text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                      {requests.map((req) => (
-                        <tr key={req.id} className="hover:bg-slate-800/40">
-                          <td className="py-3.5 px-4">
-                            <div className="font-semibold text-white">{req.resource_title}</div>
-                            <div className="text-[10px] text-teal-400">{req.resource_category}</div>
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <div className="font-medium text-white">{req.student_name}</div>
-                            <div className="text-[10px] text-slate-400">
-                              {req.student_school} • {req.student_grade}
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                req.student_verification_status === 'Verified'
-                                  ? 'bg-emerald-500/20 text-emerald-300'
-                                  : 'bg-amber-500/20 text-amber-300'
-                              }`}
-                            >
-                              {req.student_verification_status}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                req.status === 'Requested'
-                                  ? 'bg-amber-500/20 text-amber-300'
-                                  : req.status === 'Ready for Collection'
-                                  ? 'bg-teal-500/20 text-teal-300'
-                                  : req.status === 'Collected'
-                                  ? 'bg-blue-500/20 text-blue-300'
-                                  : req.status === 'Returned'
-                                  ? 'bg-slate-800 text-slate-400'
-                                  : 'bg-rose-500/20 text-rose-300'
-                              }`}
-                            >
-                              {req.status}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 text-right">
-                            {req.status === 'Requested' ? (
-                              <div className="flex items-center justify-end gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleApproveRequest(req.id)}
-                                  className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 shadow-sm"
+
+                {requests.length === 0 ? (
+                  <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center text-xs text-slate-500">
+                    <Inbox className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                    No incoming requests currently queued for this school.
+                  </div>
+                ) : (
+                  <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-bold">
+                          <tr>
+                            <th className="py-3.5 px-4">Resource Requested</th>
+                            <th className="py-3.5 px-4">Borrower Student</th>
+                            <th className="py-3.5 px-4">Student ID Card</th>
+                            <th className="py-3.5 px-4">Request Status</th>
+                            <th className="py-3.5 px-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {requests.map((req) => (
+                            <tr key={req.id} className="hover:bg-slate-50/70 transition-colors">
+                              <td className="py-4 px-4">
+                                <div className="font-bold text-slate-900">{req.resource_title}</div>
+                                <div className="text-[11px] text-teal-700 font-semibold">{req.resource_category}</div>
+                              </td>
+
+                              <td className="py-4 px-4">
+                                <div className="font-bold text-slate-900">{req.student_name}</div>
+                                <div className="text-[11px] text-slate-500">
+                                  {req.student_school} • {req.student_grade}
+                                </div>
+                                <div className="text-[10px] text-slate-400">{req.student_email}</div>
+                              </td>
+
+                              {/* Student ID Card Preview (Direct User Requirement!) */}
+                              <td className="py-4 px-4">
+                                <div className="flex items-center gap-2">
+                                  <img
+                                    src={req.student_document_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=200'}
+                                    alt="Student ID"
+                                    className="w-12 h-12 object-cover rounded-lg border border-slate-300 cursor-pointer hover:scale-105 transition-transform"
+                                    onClick={() =>
+                                      setPreviewStudent({
+                                        full_name: req.student_name,
+                                        document_type: req.student_document_type || 'School ID Card',
+                                        document_url: req.student_document_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=600',
+                                        grade: req.student_grade,
+                                        school_name: req.student_school,
+                                      })
+                                    }
+                                  />
+                                  <div>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setPreviewStudent({
+                                          full_name: req.student_name,
+                                          document_type: req.student_document_type || 'School ID Card',
+                                          document_url: req.student_document_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=600',
+                                          grade: req.student_grade,
+                                          school_name: req.student_school,
+                                        })
+                                      }
+                                      className="text-[11px] font-bold text-teal-700 hover:text-teal-900 flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" /> Inspect ID
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="py-4 px-4">
+                                <span
+                                  className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide ${
+                                    req.status === 'Requested'
+                                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                      : req.status === 'Ready for Collection'
+                                      ? 'bg-teal-100 text-teal-800 border border-teal-200'
+                                      : req.status === 'Collected'
+                                      ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                      : req.status === 'Returned'
+                                      ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                                      : 'bg-rose-100 text-rose-800 border border-rose-200'
+                                  }`}
                                 >
-                                  <CheckCircle2 className="w-3.5 h-3.5" /> Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setRejectingItem(req)}
-                                  className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white font-semibold rounded-lg text-xs transition-colors flex items-center gap-1"
-                                >
-                                  <XCircle className="w-3.5 h-3.5" /> Reject
-                                </button>
-                              </div>
-                            ) : req.status === 'Ready for Collection' ? (
-                              <button
-                                type="button"
-                                onClick={() => setScannerOpen(true)}
-                                className="px-3 py-1.5 bg-teal-500 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1 ml-auto"
-                              >
-                                <QrCode className="w-3.5 h-3.5" /> Handover Desk
-                              </button>
-                            ) : (
-                              <span className="text-[11px] text-slate-500">Processed</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                                  {req.status}
+                                </span>
+                              </td>
+
+                              <td className="py-4 px-4 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  {/* Direct Notification Message Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleOpenMessageModal({
+                                        id: req.student_id,
+                                        full_name: req.student_name,
+                                        email: req.student_email,
+                                      })
+                                    }
+                                    className="p-1.5 bg-slate-100 hover:bg-teal-50 text-slate-600 hover:text-teal-700 rounded-lg border border-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                                    title="Send direct notification to this student"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5 text-teal-600" /> Message
+                                  </button>
+
+                                  {req.status === 'Requested' ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleApproveRequest(req.id)}
+                                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
+                                      >
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setRejectingItem(req)}
+                                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <XCircle className="w-3.5 h-3.5" /> Reject
+                                      </button>
+                                    </>
+                                  ) : req.status === 'Ready for Collection' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setScannerOpen(true)}
+                                      className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg text-xs flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <QrCode className="w-3.5 h-3.5" /> Handover Desk
+                                    </button>
+                                  ) : (
+                                    <span className="text-[11px] text-slate-400 font-medium">Completed</span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: INVENTORY & ASSETS */}
+            {activeTab === 'inventory' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      Registered Equipment & Facilities ({inventory.length})
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Manage quantities, availability status, and add new assets to the shared cluster
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAddModalOpen(true)}
+                    className="px-4 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm shadow-teal-600/20 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" /> Add New Asset
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {inventory.map((item) => (
+                    <div
+                      key={item.id}
+                      className="bg-white border border-slate-200 rounded-3xl p-5 flex flex-col justify-between space-y-4 shadow-xs hover:shadow-md transition-shadow"
+                    >
+                      <div className="space-y-3">
+                        <div className="h-44 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200">
+                          <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-teal-700 font-black uppercase tracking-wider">
+                            {item.category}
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-900 truncate mt-0.5">{item.title}</h4>
+                          <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+                            {item.description}
+                          </p>
+                        </div>
+
+                        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs flex justify-between items-center">
+                          <span className="text-slate-500 font-medium">Stock Status:</span>
+                          <span className="font-extrabold text-slate-900">
+                            {item.available_quantity} of {item.total_quantity} Available
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <span className="text-[11px] text-slate-400 font-mono">{item.location_room}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteResource(item.id)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Remove resource"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
-          </div>
-        )}
 
-        {/* TAB 2: INVENTORY & ASSET MANAGEMENT (Add/Edit/Remove) */}
-        {activeTab === 'inventory' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white">
-                Equipment & Spaces Registered to {currentSchoolTitle}
-              </h3>
-              {isCurrentAdmin && (
-                <button
-                  type="button"
-                  onClick={() => setAddModalOpen(true)}
-                  className="px-3.5 py-2 bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-teal-500/20"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add New Resource
-                </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {inventory.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between space-y-4"
-                >
-                  <div className="space-y-3">
-                    <div className="h-40 rounded-xl overflow-hidden bg-slate-950">
-                      <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-teal-400 font-bold uppercase">{item.category}</div>
-                      <h4 className="text-sm font-bold text-white truncate">{item.title}</h4>
-                      <p className="text-xs text-slate-400 mt-1 line-clamp-2">{item.description}</p>
-                    </div>
-
-                    <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 text-xs flex justify-between">
-                      <span className="text-slate-400">Inventory Stock:</span>
-                      <span className="font-semibold text-white">
-                        {item.available_quantity} / {item.total_quantity} Available
-                      </span>
-                    </div>
+            {/* TAB 3: STUDENT ID VERIFICATIONS (Inspection & ID Card display) */}
+            {activeTab === 'verifications' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      Student Identity Card Verification Desk
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Inspect uploaded School ID cards & admission receipts to grant verified status for borrowing
+                    </p>
                   </div>
+                </div>
 
-                  {isCurrentAdmin && (
-                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-                      <span className="text-[10px] text-slate-500 font-mono">{item.location_room}</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {verifications.map((s) => (
+                    <div
+                      key={s.id}
+                      className="bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-xs flex flex-col justify-between"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              s.verification_status === 'Verified'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : s.verification_status === 'Pending'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                : 'bg-rose-100 text-rose-800 border border-rose-300'
+                            }`}
+                          >
+                            {s.verification_status}
+                          </span>
+                          <span className="text-[11px] text-slate-500 font-semibold">{s.grade}</span>
+                        </div>
+
+                        <div>
+                          <h4 className="text-sm font-extrabold text-slate-900">{s.full_name}</h4>
+                          <div className="text-xs text-slate-500">{s.email}</div>
+                          <div className="text-[11px] text-teal-700 font-semibold mt-1">
+                            {s.school_name || 'Partner Institution'}
+                          </div>
+                        </div>
+
+                        {/* ID Card Display Card */}
+                        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <img
+                              src={s.document_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=200'}
+                              alt="ID Document"
+                              className="w-14 h-14 object-cover rounded-xl border border-slate-300 shadow-xs cursor-pointer hover:scale-105 transition-transform"
+                              onClick={() => setPreviewStudent(s)}
+                            />
+                            <div>
+                              <div className="text-xs font-bold text-slate-900">{s.document_type}</div>
+                              <div className="text-[10px] text-teal-700 font-semibold">Ready for Review</div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setPreviewStudent(s)}
+                            className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-teal-700 font-bold border border-slate-300 rounded-xl text-[11px] flex items-center gap-1 cursor-pointer"
+                          >
+                            <Eye className="w-3 h-3" /> Inspect
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Verification & Messaging Actions */}
+                      <div className="pt-3 border-t border-slate-100 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleVerifyStudent(s.id, 'Verified', 'Verified against institutional admission records.')
+                          }
+                          className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Approve ID
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenMessageModal(s)}
+                          className="py-2 px-3 bg-slate-100 hover:bg-teal-50 text-slate-700 hover:text-teal-800 font-bold rounded-xl text-xs border border-slate-200 flex items-center gap-1 cursor-pointer"
+                          title="Message this student"
+                        >
+                          <Mail className="w-3.5 h-3.5 text-teal-600" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: CONDITION & INCIDENT REPORTS */}
+            {activeTab === 'reports' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Physical Condition & Inspection Log</h3>
+                    <p className="text-xs text-slate-500">
+                      Audit records of physical conditions recorded by staff at collection and return
+                    </p>
+                  </div>
+                </div>
+
+                {conditionReports.length === 0 ? (
+                  <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center text-xs text-slate-500">
+                    No physical condition reports recorded yet. Handover and return scans will populate this log.
+                  </div>
+                ) : (
+                  <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-bold">
+                        <tr>
+                          <th className="py-3.5 px-4">Resource</th>
+                          <th className="py-3.5 px-4">Stage</th>
+                          <th className="py-3.5 px-4">Condition Rating</th>
+                          <th className="py-3.5 px-4">Inspector Remarks</th>
+                          <th className="py-3.5 px-4">Timestamp</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {conditionReports.map((cr) => (
+                          <tr key={cr.id} className="hover:bg-slate-50">
+                            <td className="py-3.5 px-4 font-bold text-slate-900">{cr.resource_title}</td>
+                            <td className="py-3.5 px-4">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                  cr.stage === 'Pre-Collection'
+                                    ? 'bg-teal-100 text-teal-800 border border-teal-200'
+                                    : 'bg-blue-100 text-blue-800 border border-blue-200'
+                                }`}
+                              >
+                                {cr.stage}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 font-bold text-emerald-700">{cr.condition_rating}</td>
+                            <td className="py-3.5 px-4 text-slate-600">{cr.damage_details || 'Standard verification'}</td>
+                            <td className="py-3.5 px-4 text-slate-400 font-mono text-[11px]">
+                              {new Date(cr.created_at).toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 5: SCHOOL RESTRICTIONS */}
+            {activeTab === 'restrictions' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    School-Specific Borrowing Policies ({currentSchoolTitle})
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Rules enforced only for this institution's resources without impacting partner schools.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {restrictions.map((r) => (
+                    <div
+                      key={r.id}
+                      className="bg-white border border-slate-200 rounded-2xl p-4 flex items-start justify-between gap-3 text-xs shadow-xs"
+                    >
+                      <div className="space-y-1">
+                        <div className="font-bold text-slate-900">{r.rule_description}</div>
+                        <div className="text-[11px] text-teal-700 font-semibold font-mono">
+                          Category: {r.restricted_category} • Min Grade: {r.min_grade || 'None'}
+                        </div>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => handleDeleteResource(item.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition-colors"
-                        title="Delete resource"
+                        onClick={() => handleDeleteRestriction(r.id)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
-                  )}
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {/* TAB 3: STUDENT VERIFICATIONS (Section 3 Requirement) */}
-        {activeTab === 'verifications' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-white">
-                  Student Verification Queue ({verifications.length} Registered)
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Inspect submitted School ID cards and Admission Receipts to verify student authenticity
-                </p>
-              </div>
-            </div>
-
-            {!isCurrentAdmin ? (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-xs text-slate-400">
-                🔒 You must sign in as this school's coordinator to verify students.
-              </div>
-            ) : verifications.length === 0 ? (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-xs text-slate-500">
-                No students currently pending verification.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {verifications.map((s) => (
-                  <div
-                    key={s.id}
-                    className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 flex flex-col justify-between"
-                  >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            s.verification_status === 'Verified'
-                              ? 'bg-emerald-500/20 text-emerald-300'
-                              : s.verification_status === 'Pending'
-                              ? 'bg-amber-500/20 text-amber-300'
-                              : 'bg-rose-500/20 text-rose-300'
-                          }`}
-                        >
-                          {s.verification_status}
-                        </span>
-                        <span className="text-[10px] text-slate-400">{s.grade}</span>
-                      </div>
-
-                      <div>
-                        <h4 className="text-sm font-bold text-white">{s.full_name}</h4>
-                        <div className="text-xs text-slate-400">{s.email}</div>
-                        <div className="text-[11px] text-slate-400 mt-1">Age: {s.age} years</div>
-                      </div>
-
-                      {/* Verification Document Thumbnail & Preview Trigger */}
-                      <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <img
-                            src={s.document_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=200'}
-                            alt="Document"
-                            className="w-10 h-10 object-cover rounded-lg border border-slate-800"
-                          />
-                          <div className="text-[11px]">
-                            <div className="font-semibold text-slate-200">{s.document_type}</div>
-                            <div className="text-[10px] text-teal-400">Attached by Student</div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => setPreviewStudent(s)}
-                          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-teal-300 rounded text-[11px] flex items-center gap-1 font-medium"
-                        >
-                          <Eye className="w-3 h-3" /> Inspect
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="pt-3 border-t border-slate-800 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleVerifyStudent(s.id, 'Verified', 'Verified against institutional admission records.')
-                        }
-                        className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Verify
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleVerifyStudent(s.id, 'Rejected', 'Invalid or unreadable document provided.')
-                        }
-                        className="py-1.5 px-3 bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white font-semibold rounded-lg text-xs transition-colors"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 4: CONDITION & INCIDENT REPORTS (Section 8 Requirement) */}
-        {activeTab === 'reports' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-white">Physical Condition & Incident Log</h3>
-                <p className="text-xs text-slate-400">
-                  Pre-handover and post-return inspection reports recorded by coordinators
-                </p>
-              </div>
-            </div>
-
-            {conditionReports.length === 0 ? (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-xs text-slate-500">
-                No physical condition reports recorded yet. Handover and return scans will populate this log.
-              </div>
-            ) : (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden text-xs">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
-                    <tr>
-                      <th className="py-3 px-4 font-semibold">Resource</th>
-                      <th className="py-3 px-4 font-semibold">Inspection Stage</th>
-                      <th className="py-3 px-4 font-semibold">Condition Rating</th>
-                      <th className="py-3 px-4 font-semibold">Inspector Remarks</th>
-                      <th className="py-3 px-4 font-semibold">Timestamp</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                    {conditionReports.map((cr) => (
-                      <tr key={cr.id} className="hover:bg-slate-800/40">
-                        <td className="py-3 px-4 font-medium text-white">{cr.resource_title}</td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              cr.stage === 'Pre-Collection'
-                                ? 'bg-teal-500/20 text-teal-300'
-                                : 'bg-blue-500/20 text-blue-300'
-                            }`}
-                          >
-                            {cr.stage}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-semibold text-emerald-400">{cr.condition_rating}</td>
-                        <td className="py-3 px-4 text-slate-400">{cr.damage_details || 'Normal inspection'}</td>
-                        <td className="py-3 px-4 text-slate-500 font-mono text-[10px]">
-                          {new Date(cr.created_at).toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 5: SCHOOL RESTRICTIONS (Section 6 Requirement) */}
-        {activeTab === 'restrictions' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-white">
-                  Institutional Borrowing Policies ({currentSchoolTitle})
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Custom policies enforced strictly for this school's resources without impacting partner schools.
-                </p>
-              </div>
-            </div>
-
-            {/* Existing Restrictions */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {restrictions.map((r) => (
-                <div
-                  key={r.id}
-                  className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-start justify-between gap-3 text-xs"
+                <form
+                  onSubmit={handleCreateRestriction}
+                  className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 max-w-xl shadow-xs"
                 >
-                  <div className="space-y-1">
-                    <div className="font-bold text-white">{r.rule_description}</div>
-                    <div className="text-[11px] text-teal-400 font-mono">
-                      Category: {r.restricted_category} • Min Grade: {r.min_grade || 'None'}
-                    </div>
-                  </div>
-                  {isCurrentAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteRestriction(r.id)}
-                      className="p-1 text-slate-500 hover:text-rose-400"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Add New Restriction Form */}
-            {isCurrentAdmin && (
-              <form
-                onSubmit={handleCreateRestriction}
-                className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 max-w-xl"
-              >
-                <h4 className="text-xs font-bold text-teal-300 uppercase">Add School-Specific Rule</h4>
-
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Rule Description *</label>
-                  <input
-                    type="text"
-                    required
-                    value={newRestriction.rule_description}
-                    onChange={(e) =>
-                      setNewRestriction({ ...newRestriction, rule_description: e.target.value })
-                    }
-                    placeholder="e.g. Science lab equipment requires Class 11+ student verification"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-teal-400"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase">Add School Policy Rule</h4>
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Target Category</label>
-                    <select
-                      value={newRestriction.restricted_category}
-                      onChange={(e) =>
-                        setNewRestriction({ ...newRestriction, restricted_category: e.target.value })
-                      }
-                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200"
-                    >
-                      <option value="All">All Categories</option>
-                      <option value="Science laboratory equipment">Science Laboratory Equipment</option>
-                      <option value="Computers and laptops">Computers and Laptops</option>
-                      <option value="Study spaces">Study Spaces</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Minimum Student Grade</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Rule Description *</label>
                     <input
                       type="text"
-                      value={newRestriction.min_grade}
+                      required
+                      value={newRestriction.rule_description}
                       onChange={(e) =>
-                        setNewRestriction({ ...newRestriction, min_grade: e.target.value })
+                        setNewRestriction({ ...newRestriction, rule_description: e.target.value })
                       }
-                      placeholder="e.g. Class 11"
-                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200"
+                      placeholder="e.g. Science lab equipment requires Class 11+ student verification"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-teal-600 focus:bg-white"
                     />
                   </div>
-                </div>
 
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl text-xs"
-                >
-                  Save Policy Rule
-                </button>
-              </form>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Target Category</label>
+                      <select
+                        value={newRestriction.restricted_category}
+                        onChange={(e) =>
+                          setNewRestriction({ ...newRestriction, restricted_category: e.target.value })
+                        }
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
+                      >
+                        <option value="All">All Categories</option>
+                        <option value="Science laboratory equipment">Science Laboratory Equipment</option>
+                        <option value="Computers and laptops">Computers and Laptops</option>
+                        <option value="Study spaces">Study Spaces</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Minimum Student Grade</label>
+                      <input
+                        type="text"
+                        value={newRestriction.min_grade}
+                        onChange={(e) =>
+                          setNewRestriction({ ...newRestriction, min_grade: e.target.value })
+                        }
+                        placeholder="e.g. Class 11"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs cursor-pointer shadow-sm"
+                  >
+                    Save Institutional Rule
+                  </button>
+                </form>
+              </div>
             )}
-          </div>
+          </>
         )}
       </div>
 
-      {/* MODAL 1: QR HANDOVER & RETURN STATION */}
+      {/* SCANNER MODAL */}
       <ScannerModal
         isOpen={scannerOpen}
         onClose={() => setScannerOpen(false)}
@@ -829,31 +969,151 @@ export default function SchoolDashboardPage() {
         onSuccess={() => loadDashboardData()}
       />
 
-      {/* MODAL 2: ADD RESOURCE */}
-      {addModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 text-slate-200 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold text-white mb-4">Add New Resource to {schoolNames[schoolId]}</h3>
-            <form onSubmit={handleCreateResource} className="space-y-3 text-xs">
+      {/* MODAL: DIRECT MESSAGE TO STUDENT (Direct User Requirement: "all schools able to message seperately to users through notification center") */}
+      {messageStudentModalOpen && targetStudentForMessage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 text-slate-800">
+            <button
+              onClick={() => setMessageStudentModalOpen(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center">
+                <Send className="w-5 h-5" />
+              </div>
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">Resource Title *</label>
+                <h3 className="text-base font-bold text-slate-900">Message Student Directly</h3>
+                <p className="text-xs text-slate-500">Delivered directly to {targetStudentForMessage.full_name}'s notification center</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSendMessageToStudent} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Notification Subject / Title</label>
+                <input
+                  type="text"
+                  required
+                  value={messageTitle}
+                  onChange={(e) => setMessageTitle(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-teal-600 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Message Content</label>
+                <textarea
+                  rows={4}
+                  required
+                  value={messageBody}
+                  onChange={(e) => setMessageBody(e.target.value)}
+                  placeholder="e.g. Your compound microscope is ready at Science Lab Room 102. Please bring your student ID card."
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-teal-600 focus:bg-white resize-none"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={sendingMessage}
+                  className="flex-1 py-3 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {sendingMessage ? 'Sending...' : 'Send to Student'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMessageStudentModalOpen(false)}
+                  className="py-3 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: STUDENT ID CARD INSPECTION (Direct User Requirement: "if i give an input as id card any of the school portal cannot see the id card, this should be fixed") */}
+      {previewStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl text-slate-900">
+            <button
+              onClick={() => setPreviewStudent(null)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-800 rounded-xl hover:bg-slate-100"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-lg font-bold mb-1">
+              {previewStudent.full_name} — {previewStudent.document_type || 'Student ID Card'}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Institution: {previewStudent.school_name} • Grade: {previewStudent.grade}
+            </p>
+
+            <div className="rounded-2xl overflow-hidden bg-slate-100 max-h-96 flex items-center justify-center mb-5 border-2 border-slate-200">
+              <img
+                src={previewStudent.document_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=600'}
+                alt="Student ID Card Inspection"
+                className="max-h-96 object-contain"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              {previewStudent.id && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleVerifyStudent(
+                      previewStudent.id,
+                      'Verified',
+                      'ID photo & enrollment verified by institutional coordinator.'
+                    )
+                  }
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Approve & Mark Verified
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setPreviewStudent(null)}
+                className="py-2.5 px-5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD RESOURCE */}
+      {addModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-lg bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 text-slate-800 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-slate-900 mb-4">Add New Asset to {currentSchoolTitle}</h3>
+            <form onSubmit={handleCreateResource} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 mb-1 font-bold">Resource Title *</label>
                 <input
                   type="text"
                   required
                   value={newResource.title}
                   onChange={(e) => setNewResource({ ...newResource, title: e.target.value })}
-                  placeholder="e.g. Van de Graaff High Voltage Generator"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200"
+                  placeholder="e.g. Compound Binocular Research Microscope 1000x"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-teal-600 focus:bg-white"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 mb-1 font-medium">Category *</label>
+                  <label className="block text-slate-700 mb-1 font-bold">Category *</label>
                   <select
                     value={newResource.category}
                     onChange={(e) => setNewResource({ ...newResource, category: e.target.value })}
-                    className="w-full px-2.5 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
                   >
                     <option value="Books">Books</option>
                     <option value="Computers and laptops">Computers and laptops</option>
@@ -864,32 +1124,32 @@ export default function SchoolDashboardPage() {
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 mb-1 font-medium">Subject / Area</label>
+                  <label className="block text-slate-700 mb-1 font-bold">Subject / Discipline</label>
                   <input
                     type="text"
                     value={newResource.subject}
                     onChange={(e) => setNewResource({ ...newResource, subject: e.target.value })}
                     placeholder="e.g. Physics, Chemistry, CS"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">Description *</label>
+                <label className="block text-slate-700 mb-1 font-bold">Description *</label>
                 <textarea
                   rows={2}
                   required
                   value={newResource.description}
                   onChange={(e) => setNewResource({ ...newResource, description: e.target.value })}
-                  placeholder="Key specifications, capabilities, and pedagogical purpose..."
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200 resize-none"
+                  placeholder="Key capabilities, components, and educational usage..."
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 resize-none"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 mb-1 font-medium">Total Quantity *</label>
+                  <label className="block text-slate-700 mb-1 font-bold">Total Units *</label>
                   <input
                     type="number"
                     min="1"
@@ -902,33 +1162,33 @@ export default function SchoolDashboardPage() {
                         available_quantity: Number(e.target.value),
                       })
                     }
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 mb-1 font-medium">Facility / Room</label>
+                  <label className="block text-slate-700 mb-1 font-bold">Room / Laboratory</label>
                   <input
                     type="text"
                     value={newResource.location_room}
                     onChange={(e) => setNewResource({ ...newResource, location_room: e.target.value })}
-                    placeholder="e.g. Physics Lab Room 302"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200"
+                    placeholder="e.g. Biology Lab 202"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
                   />
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-4">
+              <div className="flex gap-2 pt-3">
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl"
+                  className="flex-1 py-3 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl cursor-pointer"
                 >
                   Publish Asset to Cluster
                 </button>
                 <button
                   type="button"
                   onClick={() => setAddModalOpen(false)}
-                  className="py-2.5 px-4 bg-slate-800 text-slate-300 rounded-xl"
+                  className="py-3 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl"
                 >
                   Cancel
                 </button>
@@ -938,77 +1198,34 @@ export default function SchoolDashboardPage() {
         </div>
       )}
 
-      {/* MODAL 3: REJECTION REASON DIALOG */}
+      {/* REJECTION REASON DIALOG */}
       {rejectingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 text-slate-200">
-            <h3 className="text-base font-bold text-white mb-2">Reject Request</h3>
-            <p className="text-xs text-slate-400 mb-4">
-              State the reason for not approving request for <strong>{rejectingItem.resource_title}</strong>:
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 text-slate-800">
+            <h3 className="text-base font-bold text-slate-900 mb-1">Reject Borrow Request</h3>
+            <p className="text-xs text-slate-500 mb-3">
+              State the reason for not approving <strong>{rejectingItem.resource_title}</strong>:
             </p>
             <textarea
               rows={3}
               value={rejectionReason}
               onChange={(e) => setRejectionReason(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-200 mb-4 focus:outline-none focus:border-rose-400"
+              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 mb-4 focus:outline-none focus:border-rose-600 resize-none"
             />
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={handleRejectRequest}
-                className="flex-1 py-2 bg-rose-500 hover:bg-rose-400 text-white font-bold rounded-xl text-xs"
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs cursor-pointer shadow-sm"
               >
                 Confirm Rejection
               </button>
               <button
                 type="button"
                 onClick={() => setRejectingItem(null)}
-                className="py-2 px-4 bg-slate-800 text-slate-300 rounded-xl text-xs"
+                className="py-2.5 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
               >
                 Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 4: STUDENT ID DOCUMENT INSPECTION */}
-      {previewStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 text-slate-200">
-            <h3 className="text-base font-bold text-white mb-1">
-              Verify Student Identity: {previewStudent.full_name}
-            </h3>
-            <p className="text-xs text-slate-400 mb-4">
-              Document: {previewStudent.document_type} • Grade: {previewStudent.grade}
-            </p>
-            <div className="rounded-xl overflow-hidden bg-black max-h-72 flex items-center justify-center mb-4 border border-slate-800">
-              <img
-                src={previewStudent.document_url}
-                alt="Student Document"
-                className="max-h-72 object-contain"
-              />
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() =>
-                  handleVerifyStudent(
-                    previewStudent.id,
-                    'Verified',
-                    'ID photo & grade verified by institutional registrar.'
-                  )
-                }
-                className="flex-1 py-2 bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5"
-              >
-                <CheckCircle2 className="w-4 h-4" /> Approve & Mark Verified
-              </button>
-              <button
-                type="button"
-                onClick={() => setPreviewStudent(null)}
-                className="py-2 px-4 bg-slate-800 text-slate-300 rounded-xl text-xs"
-              >
-                Close
               </button>
             </div>
           </div>

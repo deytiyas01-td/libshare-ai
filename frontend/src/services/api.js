@@ -91,10 +91,16 @@ export const api = {
       request(`/school/${schoolId}/restrictions`, { method: 'POST', body: JSON.stringify(data) }),
     deleteRestriction: (schoolId, ruleId) =>
       request(`/school/${schoolId}/restrictions/${ruleId}`, { method: 'DELETE' }),
+    messageStudent: (schoolId, studentId, title, message) =>
+      request(`/school/${schoolId}/message-student`, {
+        method: 'POST',
+        body: JSON.stringify({ student_id: studentId, title, message }),
+      }),
   },
 
   // QR Handover & Return
   qr: {
+    lookup: (qrToken) => request(`/qr/lookup/${encodeURIComponent(qrToken)}`),
     verifyHandover: (qrToken, conditionRating, preConditionNotes = '') =>
       request('/qr/verify-and-handover', {
         method: 'POST',

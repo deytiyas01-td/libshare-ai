@@ -4,6 +4,10 @@
   body {
     @apply bg-slate-50 text-slate-800 antialiased selection:bg-teal-500 selection:text-white min-h-screen font-sans;
   }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-slate-900 font-semibold tracking-tight;
+  }
 }
 
 /* Custom scrollbars */
@@ -22,17 +26,14 @@
   background: #94a3b8;
 }
 
-/* Glassmorphism helpers */
+/* Glassmorphism helpers for light theme */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  border: 1px solid rgba(226, 232, 240, 1);
 }
 
-.glass-dark {
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(51, 65, 85, 0.6);
+.card-light {
+  @apply bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md transition-all;
 }
