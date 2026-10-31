@@ -483,6 +483,10 @@ def get_sent_messages(
         })
     return result
 
+# ==========================================
+# MULTI-RESOURCE BOOKING & ROUTING WORKFLOW
+# ==========================================
+@app.post("/api/bookings")
 def create_booking(
     booking_req: schemas.BookingCreateRequest,
     current_student: dict = Depends(require_verified_student),
@@ -723,19 +727,20 @@ def decide_request(
 
         # Auto-verify student when their request is approved by school coordinator
         student = db.query(models.Profile).filter(models.Profile.id == bitem.student_id).first()
+        admin_name = current_admin.get("name") or "School Coordinator"
         if student and student.verification_status != "Verified":
             student.verification_status = "Verified"
-            student.verification_notes = f"Verified upon equipment approval by {current_admin['name']}."
+            student.verification_notes = f"Verified upon equipment approval by {admin_name}."
 
         school = db.query(models.School).filter(models.School.id == school_id).first()
-        school_name = school.name if school else current_admin["name"]
+        school_name = school.name if school else admin_name
 
         # Send QR code pass to the student ONLY AFTER verification
         db.add(models.Notification(
             id=str(uuid.uuid4()),
             user_id=bitem.student_id,
             title=f"Request Verified & Approved: {res.title}",
-            message=f"{current_admin['name']} from {school_name} has verified your borrow request for '{res.title}'. Your official QR Handover Pass is now active. View or download your QR code pass to collect the equipment.",
+            message=f"{admin_name} from {school_name} has verified your borrow request for '{res.title}'. Your official QR Handover Pass is now active. View or download your QR code pass to collect the equipment.",
             qr_token=bitem.qr_token,
             sender_school_id=school_id,
             sender_name=school_name,
@@ -749,11 +754,13 @@ def decide_request(
         bitem.rejection_reason = decision.rejection_reason or "Scheduling or capacity limitation."
 
         db.add(models.Notification(
+            id=str(uuid.uuid4()),
             user_id=bitem.student_id,
             title="Request Status Update",
             message=f"Your request for '{res.title}' was not approved. Reason: {bitem.rejection_reason}",
             type="booking_status",
-            link="/student/my-bookings"
+            link="/student/profile",
+            created_at=datetime.utcnow()
         ))
 
     db.commit()
@@ -1110,26 +1117,28 @@ def update_student_verification(
         raise HTTPException(status_code=403, detail="Access Denied.")
 
     student = db.query(models.Profile).filter(
-        models.Profile.id == student_id,
-        models.Profile.school_id == school_id
+        models.Profile.id == student_id
     ).first()
 
     if not student:
         raise HTTPException(status_code=404, detail="Student record not found.")
 
     student.verification_status = update.verification_status
-    student.verification_notes = update.verification_notes or f"Updated by {current_admin['name']}"
+    admin_name = current_admin.get("name") or "School Coordinator"
+    student.verification_notes = update.verification_notes or f"Updated by {admin_name}"
     if update.verification_status == "Verified":
         student.verified_by_school_id = school_id
         student.verified_at = datetime.utcnow()
 
     # Notify student
     db.add(models.Notification(
+        id=str(uuid.uuid4()),
         user_id=student.id,
         title=f"Identity Verification: {update.verification_status}",
         message=f"Your school identity verification status has been updated to '{update.verification_status}'. Notes: {student.verification_notes}",
         type="verification",
-        link="/student/profile"
+        link="/student/profile",
+        created_at=datetime.utcnow()
     ))
 
     db.commit()
