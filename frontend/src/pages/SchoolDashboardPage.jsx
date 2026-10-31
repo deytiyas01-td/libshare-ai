@@ -99,6 +99,16 @@ export default function SchoolDashboardPage() {
     require_faculty_approval: false,
   });
 
+  // Equipment Management: Edit & Decommission / Delete Modals
+  const [editingResource, setEditingResource] = useState(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [decommissionModalOpen, setDecommissionModalOpen] = useState(false);
+  const [resourceToDecommission, setResourceToDecommission] = useState(null);
+  const [decommissionReason, setDecommissionReason] = useState('Out of service / Damaged');
+  const [decommissionNotes, setDecommissionNotes] = useState('');
+  const [decommissioning, setDecommissioning] = useState(false);
+  const [updatingResource, setUpdatingResource] = useState(false);
+
   const isCurrentAdmin = user && user.role === 'school_admin' && user.school_id === schoolId;
 
   const schoolNames = {
@@ -277,6 +287,78 @@ export default function SchoolDashboardPage() {
       loadDashboardData();
     } catch (e) {
       alert(e.message || 'Failed to delete');
+    }
+  };
+
+  const handleOpenEditModal = (item) => {
+    setEditingResource({
+      id: item.id,
+      title: item.title,
+      category: item.category,
+      description: item.description,
+      total_quantity: item.total_quantity,
+      available_quantity: item.available_quantity,
+      location_room: item.location_room || '',
+      usage_rules: item.usage_rules || '',
+      eligibility_requirements: item.eligibility_requirements || '',
+      status: item.status || 'Available',
+      image_url: item.image_url || '',
+      author: item.author || '',
+      subject: item.subject || '',
+      genre: item.genre || '',
+    });
+    setEditModalOpen(true);
+  };
+
+  const handleUpdateResource = async (e) => {
+    e.preventDefault();
+    if (!editingResource) return;
+    setUpdatingResource(true);
+    try {
+      await api.resources.update(editingResource.id, editingResource);
+      setEditModalOpen(false);
+      setEditingResource(null);
+      loadDashboardData();
+    } catch (err) {
+      alert(err.message || 'Failed to update equipment details');
+    } finally {
+      setUpdatingResource(false);
+    }
+  };
+
+  const handleOpenDecommissionModal = (item) => {
+    setResourceToDecommission(item);
+    setDecommissionReason('Out of service / Damaged');
+    setDecommissionNotes('');
+    setDecommissionModalOpen(true);
+  };
+
+  const handleConfirmDecommission = async (e) => {
+    e?.preventDefault();
+    if (!resourceToDecommission) return;
+    setDecommissioning(true);
+    try {
+      await api.resources.delete(resourceToDecommission.id);
+      setDecommissionModalOpen(false);
+      setResourceToDecommission(null);
+      loadDashboardData();
+    } catch (err) {
+      alert(err.message || 'Failed to remove equipment');
+    } finally {
+      setDecommissioning(false);
+    }
+  };
+
+  const handleToggleAvailability = async (item) => {
+    try {
+      const isCurrentlyAvail = item.status === 'Available' && item.available_quantity > 0;
+      const updateData = isCurrentlyAvail
+        ? { status: 'Under Maintenance', available_quantity: 0 }
+        : { status: 'Available', available_quantity: item.total_quantity || 1 };
+      await api.resources.update(item.id, updateData);
+      loadDashboardData();
+    } catch (err) {
+      alert(err.message || 'Failed to toggle availability status');
     }
   };
 
@@ -482,7 +564,7 @@ export default function SchoolDashboardPage() {
                 }`}
               >
                 <Package className="w-4 h-4" />
-                Inventory & Assets ({inventory.length})
+                Equipment & Asset Allocation ({inventory.length})
               </button>
 
               <button
@@ -818,66 +900,124 @@ export default function SchoolDashboardPage() {
 
             {/* TAB 2: INVENTORY & ASSETS */}
             {activeTab === 'inventory' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
+              <div className="space-y-6">
+                {/* Header Action Banner */}
+                <div className="bg-gradient-to-r from-teal-50 via-cyan-50 to-slate-50 border border-teal-200/70 rounded-3xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
                   <div>
-                    <h3 className="text-base font-bold text-slate-900">
-                      Registered Equipment & Facilities ({inventory.length})
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-200 mb-2">
+                      <Sparkles className="w-3.5 h-3.5 text-teal-600" /> Equipment Allocation Center
+                    </div>
+                    <h3 className="text-xl font-black text-slate-900">
+                      Offer & Manage Equipment for {currentSchoolTitle}
                     </h3>
-                    <p className="text-xs text-slate-500">
-                      Manage quantities, availability status, and add new assets to the shared cluster
+                    <p className="text-xs text-slate-600 max-w-xl mt-1 leading-relaxed">
+                      Publish newly available lab tools, books, computers, and spaces for partner schools to borrow. You can update quantities, mark items under maintenance, or decommission items that are no longer available.
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setAddModalOpen(true)}
-                    className="px-4 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm shadow-teal-600/20 cursor-pointer"
+                    className="px-5 py-3 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md shadow-teal-600/20 cursor-pointer shrink-0 transition-transform hover:scale-[1.02]"
                   >
-                    <Plus className="w-4 h-4" /> Add New Asset
+                    <Plus className="w-4 h-4" /> Offer Available Equipment
                   </button>
                 </div>
 
+                {/* Inventory Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {inventory.map((item) => (
-                    <div
-                      key={item.id}
-                      className="bg-white border border-slate-200 rounded-3xl p-5 flex flex-col justify-between space-y-4 shadow-xs hover:shadow-md transition-shadow"
-                    >
-                      <div className="space-y-3">
-                        <div className="h-44 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200">
-                          <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
-                        </div>
-                        <div>
-                          <div className="text-[10px] text-teal-700 font-black uppercase tracking-wider">
-                            {item.category}
+                  {inventory.map((item) => {
+                    const isAvailable = item.status === 'Available' && item.available_quantity > 0;
+                    const isMaintenance = item.status === 'Under Maintenance';
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="bg-white border border-slate-200 rounded-3xl p-5 flex flex-col justify-between space-y-4 shadow-xs hover:shadow-md transition-shadow relative"
+                      >
+                        <div className="space-y-3">
+                          <div className="h-44 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 relative group">
+                            <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
+                            {/* Status Tag Overlay */}
+                            <div className="absolute top-3 right-3">
+                              {isAvailable && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-xs">
+                                  <CheckCircle2 className="w-3 h-3" /> Available ({item.available_quantity})
+                                </span>
+                              )}
+                              {isMaintenance && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-xs">
+                                  <AlertTriangle className="w-3 h-3" /> Under Maintenance
+                                </span>
+                              )}
+                              {!isAvailable && !isMaintenance && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-600 text-white shadow-xs">
+                                  Fully Booked
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <h4 className="text-sm font-bold text-slate-900 truncate mt-0.5">{item.title}</h4>
-                          <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
-                            {item.description}
-                          </p>
+
+                          <div>
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="text-teal-700 font-black uppercase tracking-wider">
+                                {item.category}
+                              </span>
+                              <span className="text-slate-400 font-mono font-medium">{item.location_room}</span>
+                            </div>
+                            <h4 className="text-sm font-bold text-slate-900 truncate mt-1">{item.title}</h4>
+                            <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+                              {item.description}
+                            </p>
+                          </div>
+
+                          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs flex justify-between items-center">
+                            <span className="text-slate-500 font-medium">Allocation Status:</span>
+                            <span className="font-extrabold text-slate-900">
+                              {item.available_quantity} of {item.total_quantity} In Stock
+                            </span>
+                          </div>
                         </div>
 
-                        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs flex justify-between items-center">
-                          <span className="text-slate-500 font-medium">Stock Status:</span>
-                          <span className="font-extrabold text-slate-900">
-                            {item.available_quantity} of {item.total_quantity} Available
-                          </span>
+                        {/* Interactive Equipment Controls */}
+                        <div className="pt-3 border-t border-slate-100 space-y-2">
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(item)}
+                              className="flex-1 py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                              title="Update description, quantity, rules, or room details"
+                            >
+                              <Edit className="w-3.5 h-3.5 text-slate-600" />
+                              <span>Edit Details</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAvailability(item)}
+                              className={`py-2 px-3 font-bold rounded-xl text-[11px] flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                                isMaintenance
+                                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                              }`}
+                              title="Temporarily mark available or unavailable"
+                            >
+                              {isMaintenance ? 'Mark Available' : 'Maintenance'}
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDecommissionModal(item)}
+                            className="w-full py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-rose-200/60"
+                            title="Remove or delete if not available with decommissioning record"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Remove / Retire Equipment</span>
+                          </button>
                         </div>
                       </div>
-
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                        <span className="text-[11px] text-slate-400 font-mono">{item.location_room}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteResource(item.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
-                          title="Remove resource"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1385,10 +1525,10 @@ export default function SchoolDashboardPage() {
       {addModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
           <div className="relative w-full max-w-lg bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 text-slate-800 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Add New Asset to {currentSchoolTitle}</h3>
+            <h3 className="text-lg font-bold text-slate-900 mb-4">Offer Available Equipment to Cluster ({currentSchoolTitle})</h3>
             <form onSubmit={handleCreateResource} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-700 mb-1 font-bold">Resource Title *</label>
+                <label className="block text-slate-700 mb-1 font-bold">Resource / Equipment Title *</label>
                 <input
                   type="text"
                   required
@@ -1470,6 +1610,17 @@ export default function SchoolDashboardPage() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-slate-700 mb-1 font-bold">Image URL</label>
+                <input
+                  type="url"
+                  value={newResource.image_url}
+                  onChange={(e) => setNewResource({ ...newResource, image_url: e.target.value })}
+                  placeholder="https://..."
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-mono"
+                />
+              </div>
+
               <div className="flex gap-2 pt-3">
                 <button
                   type="submit"
@@ -1480,6 +1631,195 @@ export default function SchoolDashboardPage() {
                 <button
                   type="button"
                   onClick={() => setAddModalOpen(false)}
+                  className="py-3 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDIT EQUIPMENT DETAILS */}
+      {editModalOpen && editingResource && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-lg bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 text-slate-800 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-slate-900 mb-1">Edit Equipment Details</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Update inventory counts, operational room location, or usage policies.
+            </p>
+
+            <form onSubmit={handleUpdateResource} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 mb-1 font-bold">Equipment Title *</label>
+                <input
+                  type="text"
+                  required
+                  value={editingResource.title}
+                  onChange={(e) => setEditingResource({ ...editingResource, title: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-teal-600 focus:bg-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 mb-1 font-bold">Operational Status *</label>
+                  <select
+                    value={editingResource.status}
+                    onChange={(e) => setEditingResource({ ...editingResource, status: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
+                  >
+                    <option value="Available">Available for Sharing</option>
+                    <option value="Under Maintenance">Under Maintenance</option>
+                    <option value="Fully Booked">Fully Booked / In Use</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 mb-1 font-bold">Category</label>
+                  <select
+                    value={editingResource.category}
+                    onChange={(e) => setEditingResource({ ...editingResource, category: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
+                  >
+                    <option value="Books">Books</option>
+                    <option value="Computers and laptops">Computers and laptops</option>
+                    <option value="Study spaces">Study spaces</option>
+                    <option value="Science laboratory equipment">Science laboratory equipment</option>
+                    <option value="Educational tools and devices">Educational tools and devices</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 mb-1 font-bold">Description *</label>
+                <textarea
+                  rows={2}
+                  required
+                  value={editingResource.description}
+                  onChange={(e) => setEditingResource({ ...editingResource, description: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-700 mb-1 font-bold">Available Units</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editingResource.available_quantity}
+                    onChange={(e) => setEditingResource({ ...editingResource, available_quantity: Number(e.target.value) })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 mb-1 font-bold">Total Units</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editingResource.total_quantity}
+                    onChange={(e) => setEditingResource({ ...editingResource, total_quantity: Number(e.target.value) })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 mb-1 font-bold">Room / Lab</label>
+                  <input
+                    type="text"
+                    value={editingResource.location_room}
+                    onChange={(e) => setEditingResource({ ...editingResource, location_room: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 mb-1 font-bold">Usage Rules & Conditions</label>
+                <input
+                  type="text"
+                  value={editingResource.usage_rules}
+                  onChange={(e) => setEditingResource({ ...editingResource, usage_rules: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-3">
+                <button
+                  type="submit"
+                  disabled={updatingResource}
+                  className="flex-1 py-3 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-bold rounded-xl cursor-pointer"
+                >
+                  {updatingResource ? 'Saving...' : 'Save Updated Details'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditModalOpen(false)}
+                  className="py-3 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DECOMMISSION & DELETE NOT AVAILABLE EQUIPMENT */}
+      {decommissionModalOpen && resourceToDecommission && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 text-slate-800">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4 border border-rose-200">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <h3 className="text-base font-bold text-slate-900 mb-1">Decommission / Remove Equipment</h3>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              You are removing <strong>{resourceToDecommission.title}</strong> from {currentSchoolTitle}&apos;s catalog. Please provide the status report below to complete the removal:
+            </p>
+
+            <form onSubmit={handleConfirmDecommission} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 mb-1 font-bold">Reason for Removal / Unavailability *</label>
+                <select
+                  value={decommissionReason}
+                  onChange={(e) => setDecommissionReason(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900"
+                >
+                  <option value="Out of service / Damaged">Equipment damaged / Sent for repair</option>
+                  <option value="No longer available / Out of stock">No longer available / Out of stock</option>
+                  <option value="Reserved for internal institutional curriculum">Reserved for internal school curriculum</option>
+                  <option value="Missing or incomplete parts">Missing or incomplete components</option>
+                  <option value="Replaced by upgraded equipment">Replaced with upgraded model</option>
+                  <option value="Permanently decommissioned">Permanently decommissioned</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 mb-1 font-bold">Additional Notes & Condition Details</label>
+                <textarea
+                  rows={2}
+                  value={decommissionNotes}
+                  onChange={(e) => setDecommissionNotes(e.target.value)}
+                  placeholder="e.g. Lens broken during lab session; unit unserviceable until replacement arrives..."
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 resize-none"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={decommissioning}
+                  className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold rounded-xl cursor-pointer shadow-sm"
+                >
+                  {decommissioning ? 'Removing...' : 'Confirm Removal from Cluster'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDecommissionModalOpen(false)}
                   className="py-3 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl"
                 >
                   Cancel
