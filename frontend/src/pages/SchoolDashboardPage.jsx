@@ -77,12 +77,19 @@ export default function SchoolDashboardPage() {
   // Student Document Preview Modal
   const [previewStudent, setPreviewStudent] = useState(null);
 
-  // Direct Message to Student Modal (Direct User Requirement!)
+  // Direct Message to Student Modal & Dedicated Message Center
   const [messageStudentModalOpen, setMessageStudentModalOpen] = useState(false);
   const [targetStudentForMessage, setTargetStudentForMessage] = useState(null);
   const [messageTitle, setMessageTitle] = useState('Important Notice Regarding Your Borrowed Resource');
   const [messageBody, setMessageBody] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [sentMessages, setSentMessages] = useState([]);
+  const [inlineMessageItemId, setInlineMessageItemId] = useState(null);
+  const [inlineMessageStudentId, setInlineMessageStudentId] = useState(null);
+  const [inlineTitle, setInlineTitle] = useState('');
+  const [inlineBody, setInlineBody] = useState('');
+  const [messageSuccessAlert, setMessageSuccessAlert] = useState(null);
+  const [selectedMessageRecipientId, setSelectedMessageRecipientId] = useState('');
 
   // New Restriction Form
   const [newRestriction, setNewRestriction] = useState({
@@ -135,6 +142,9 @@ export default function SchoolDashboardPage() {
 
         const condData = await api.school.getConditionReports(schoolId);
         setConditionReports(condData);
+
+        const sentData = await api.school.getSentMessages(schoolId).catch(() => []);
+        setSentMessages(sentData || []);
       }
 
       // 3. Fetch restrictions
@@ -210,25 +220,43 @@ export default function SchoolDashboardPage() {
     setMessageStudentModalOpen(true);
   };
 
-  const handleSendMessageToStudent = async (e) => {
-    e.preventDefault();
-    if (!targetStudentForMessage || !messageBody.trim()) return;
+  const handleSendDirectMessage = async (studentId, title, body) => {
+    const sId = studentId || targetStudentForMessage?.id || selectedMessageRecipientId;
+    const sTitle = (title || messageTitle || `Notice from ${currentSchoolTitle}`).trim();
+    const sBody = (body || messageBody).trim();
+
+    if (!sId) {
+      alert('Please select or specify a recipient student.');
+      return;
+    }
+    if (!sBody) {
+      alert('Please enter a message text in the text field before sending.');
+      return;
+    }
 
     setSendingMessage(true);
     try {
-      await api.school.messageStudent(
-        schoolId,
-        targetStudentForMessage.id,
-        messageTitle.trim(),
-        messageBody.trim()
-      );
+      const res = await api.school.messageStudent(schoolId, sId, sTitle, sBody);
       setMessageStudentModalOpen(false);
-      alert(`Notification sent directly to ${targetStudentForMessage.full_name || 'student'}'s notification center!`);
+      setInlineMessageItemId(null);
+      setInlineMessageStudentId(null);
+      setMessageBody('');
+      setInlineBody('');
+      setMessageSuccessAlert(`✅ Notification successfully sent to ${res.student_name || 'student'}'s notification portal!`);
+      setTimeout(() => setMessageSuccessAlert(null), 6000);
+
+      const sentData = await api.school.getSentMessages(schoolId).catch(() => []);
+      setSentMessages(sentData || []);
     } catch (err) {
-      alert(err.message || 'Failed to send notification');
+      alert(err.message || 'Failed to dispatch notification to student portal');
     } finally {
       setSendingMessage(false);
     }
+  };
+
+  const handleSendMessageToStudent = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    await handleSendDirectMessage(targetStudentForMessage?.id, messageTitle, messageBody);
   };
 
   const handleCreateResource = async (e) => {
@@ -409,6 +437,23 @@ export default function SchoolDashboardPage() {
         ) : (
           /* AUTHENTICATED SCHOOL DASHBOARD TABS */
           <>
+            {/* Real-time Message Dispatched Alert */}
+            {messageSuccessAlert && (
+              <div className="bg-emerald-50 border border-emerald-300 p-4 rounded-2xl text-xs text-emerald-900 flex items-center justify-between shadow-xs animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span className="font-bold">{messageSuccessAlert}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMessageSuccessAlert(null)}
+                  className="text-emerald-700 hover:text-emerald-900 text-xs font-bold cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
             {/* Navigation Tabs */}
             <div className="flex border-b border-slate-200 overflow-x-auto scrollbar-none gap-2 text-xs font-bold">
               <button
@@ -450,6 +495,23 @@ export default function SchoolDashboardPage() {
               >
                 <Users className="w-4 h-4" />
                 Student ID Verifications ({verifications.length})
+              </button>
+
+              <button
+                onClick={() => setActiveTab('messages')}
+                className={`flex items-center gap-2 pb-3.5 px-4 border-b-2 transition-colors shrink-0 cursor-pointer ${
+                  activeTab === 'messages'
+                    ? 'border-teal-600 text-teal-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4" />
+                Message Users
+                {sentMessages.length > 0 && (
+                  <span className="px-2 py-0.5 bg-teal-100 text-teal-800 text-[10px] font-black rounded-full">
+                    {sentMessages.length}
+                  </span>
+                )}
               </button>
 
               <button
@@ -518,40 +580,28 @@ export default function SchoolDashboardPage() {
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-slate-700">
                           {requests.map((req) => (
-                            <tr key={req.id} className="hover:bg-slate-50/70 transition-colors">
-                              <td className="py-4 px-4">
-                                <div className="font-bold text-slate-900">{req.resource_title}</div>
-                                <div className="text-[11px] text-teal-700 font-semibold">{req.resource_category}</div>
-                              </td>
+                            <React.Fragment key={req.id}>
+                              <tr className="hover:bg-slate-50/70 transition-colors">
+                                <td className="py-4 px-4">
+                                  <div className="font-bold text-slate-900">{req.resource_title}</div>
+                                  <div className="text-[11px] text-teal-700 font-semibold">{req.resource_category}</div>
+                                </td>
 
-                              <td className="py-4 px-4">
-                                <div className="font-bold text-slate-900">{req.student_name}</div>
-                                <div className="text-[11px] text-slate-500">
-                                  {req.student_school} • {req.student_grade}
-                                </div>
-                                <div className="text-[10px] text-slate-400">{req.student_email}</div>
-                              </td>
+                                <td className="py-4 px-4">
+                                  <div className="font-bold text-slate-900">{req.student_name}</div>
+                                  <div className="text-[11px] text-slate-500">
+                                    {req.student_school} • {req.student_grade}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400">{req.student_email}</div>
+                                </td>
 
-                              {/* Student ID Card Preview (Direct User Requirement!) */}
-                              <td className="py-4 px-4">
-                                <div className="flex items-center gap-2">
-                                  <img
-                                    src={req.student_document_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=200'}
-                                    alt="Student ID"
-                                    className="w-12 h-12 object-cover rounded-lg border border-slate-300 cursor-pointer hover:scale-105 transition-transform"
-                                    onClick={() =>
-                                      setPreviewStudent({
-                                        full_name: req.student_name,
-                                        document_type: req.student_document_type || 'School ID Card',
-                                        document_url: req.student_document_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=600',
-                                        grade: req.student_grade,
-                                        school_name: req.student_school,
-                                      })
-                                    }
-                                  />
-                                  <div>
-                                    <button
-                                      type="button"
+                                {/* Student ID Card Preview (Direct User Requirement!) */}
+                                <td className="py-4 px-4">
+                                  <div className="flex items-center gap-2">
+                                    <img
+                                      src={req.student_document_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=200'}
+                                      alt="Student ID"
+                                      className="w-12 h-12 object-cover rounded-lg border border-slate-300 cursor-pointer hover:scale-105 transition-transform"
                                       onClick={() =>
                                         setPreviewStudent({
                                           full_name: req.student_name,
@@ -561,81 +611,202 @@ export default function SchoolDashboardPage() {
                                           school_name: req.student_school,
                                         })
                                       }
-                                      className="text-[11px] font-bold text-teal-700 hover:text-teal-900 flex items-center gap-1 cursor-pointer"
-                                    >
-                                      <Eye className="w-3.5 h-3.5" /> Inspect ID
-                                    </button>
+                                    />
+                                    <div>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setPreviewStudent({
+                                            full_name: req.student_name,
+                                            document_type: req.student_document_type || 'School ID Card',
+                                            document_url: req.student_document_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=600',
+                                            grade: req.student_grade,
+                                            school_name: req.student_school,
+                                          })
+                                        }
+                                        className="text-[11px] font-bold text-teal-700 hover:text-teal-900 flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <Eye className="w-3.5 h-3.5" /> Inspect ID
+                                      </button>
+                                    </div>
                                   </div>
-                                </div>
-                              </td>
+                                </td>
 
-                              <td className="py-4 px-4">
-                                <span
-                                  className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide ${
-                                    req.status === 'Requested'
-                                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                      : req.status === 'Ready for Collection'
-                                      ? 'bg-teal-100 text-teal-800 border border-teal-200'
-                                      : req.status === 'Collected'
-                                      ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                                      : req.status === 'Returned'
-                                      ? 'bg-slate-100 text-slate-700 border border-slate-200'
-                                      : 'bg-rose-100 text-rose-800 border border-rose-200'
-                                  }`}
-                                >
-                                  {req.status}
-                                </span>
-                              </td>
-
-                              <td className="py-4 px-4 text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  {/* Direct Notification Message Button */}
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleOpenMessageModal({
-                                        id: req.student_id,
-                                        full_name: req.student_name,
-                                        email: req.student_email,
-                                      })
-                                    }
-                                    className="p-1.5 bg-slate-100 hover:bg-teal-50 text-slate-600 hover:text-teal-700 rounded-lg border border-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                                    title="Send direct notification to this student"
+                                <td className="py-4 px-4">
+                                  <span
+                                    className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide ${
+                                      req.status === 'Requested'
+                                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                        : req.status === 'Ready for Collection'
+                                        ? 'bg-teal-100 text-teal-800 border border-teal-200'
+                                        : req.status === 'Collected'
+                                        ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                        : req.status === 'Returned'
+                                        ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                                        : 'bg-rose-100 text-rose-800 border border-rose-200'
+                                    }`}
                                   >
-                                    <MessageSquare className="w-3.5 h-3.5 text-teal-600" /> Message
-                                  </button>
+                                    {req.status}
+                                  </span>
+                                </td>
 
-                                  {req.status === 'Requested' ? (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleApproveRequest(req.id)}
-                                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
-                                      >
-                                        <CheckCircle2 className="w-3.5 h-3.5" /> Approve
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setRejectingItem(req)}
-                                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
-                                      >
-                                        <XCircle className="w-3.5 h-3.5" /> Reject
-                                      </button>
-                                    </>
-                                  ) : req.status === 'Ready for Collection' ? (
+                                <td className="py-4 px-4 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    {/* Direct Notification Message Button */}
                                     <button
                                       type="button"
-                                      onClick={() => setScannerOpen(true)}
-                                      className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg text-xs flex items-center gap-1 cursor-pointer"
+                                      onClick={() => {
+                                        if (inlineMessageItemId === req.id) {
+                                          setInlineMessageItemId(null);
+                                        } else {
+                                          setInlineMessageItemId(req.id);
+                                          setInlineTitle(`Notice from ${currentSchoolTitle} regarding ${req.resource_title}`);
+                                          setInlineBody('');
+                                        }
+                                      }}
+                                      className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                                        inlineMessageItemId === req.id
+                                          ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
+                                          : 'bg-slate-100 hover:bg-teal-50 text-slate-700 hover:text-teal-800 border-slate-200'
+                                      }`}
+                                      title="Click to open text field and send notification to this student"
                                     >
-                                      <QrCode className="w-3.5 h-3.5" /> Handover Desk
+                                      <MessageSquare className="w-3.5 h-3.5" />
+                                      {inlineMessageItemId === req.id ? 'Close Message' : 'Message Student'}
                                     </button>
-                                  ) : (
-                                    <span className="text-[11px] text-slate-400 font-medium">Completed</span>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
+
+                                    {req.status === 'Requested' ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleApproveRequest(req.id)}
+                                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                                          title="Verify student & issue QR handover pass"
+                                        >
+                                          <CheckCircle2 className="w-3.5 h-3.5" /> Verify & Issue QR Pass
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setRejectingItem(req)}
+                                          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                        >
+                                          <XCircle className="w-3.5 h-3.5" /> Reject
+                                        </button>
+                                      </>
+                                    ) : req.status === 'Ready for Collection' ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setScannerOpen(true)}
+                                        className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg text-xs flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <QrCode className="w-3.5 h-3.5" /> Handover Desk
+                                      </button>
+                                    ) : (
+                                      <span className="text-[11px] text-slate-400 font-medium">Completed</span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+
+                              {/* INLINE MESSAGE TEXT FIELD COMPOSER (Appears directly by clicking on Message) */}
+                              {inlineMessageItemId === req.id && (
+                                <tr className="bg-teal-50/60 border-y-2 border-teal-500/30 animate-fadeIn">
+                                  <td colSpan={5} className="p-4 sm:p-5">
+                                    <div className="bg-white border border-teal-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3.5">
+                                      <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                                        <div className="flex items-center gap-2 text-xs font-bold text-teal-900">
+                                          <Send className="w-4 h-4 text-teal-600" />
+                                          Send Notification to {req.student_name} ({req.student_email})
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => setInlineMessageItemId(null)}
+                                          className="text-slate-400 hover:text-slate-700 text-xs font-bold cursor-pointer"
+                                        >
+                                          ✕ Close
+                                        </button>
+                                      </div>
+
+                                      <div className="space-y-2.5">
+                                        <div>
+                                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                            Notification Title / Subject:
+                                          </label>
+                                          <input
+                                            type="text"
+                                            value={inlineTitle}
+                                            onChange={(e) => setInlineTitle(e.target.value)}
+                                            placeholder="e.g. Notice regarding your requested resource"
+                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-teal-600 focus:bg-white"
+                                          />
+                                        </div>
+
+                                        <div>
+                                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                            Message Text Field (Delivered to Student Notification Portal):
+                                          </label>
+                                          <textarea
+                                            rows={3}
+                                            value={inlineBody}
+                                            onChange={(e) => setInlineBody(e.target.value)}
+                                            placeholder={`Type your official notification message to ${req.student_name} here... (e.g. Your request has been approved. Please collect it from Computer Lab B between 10:00 AM and 3:00 PM.)`}
+                                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-teal-600 focus:bg-white resize-none"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                                        <div className="flex flex-wrap gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setInlineBody(
+                                                'Your borrow request has been verified and approved. Please bring your physical ID card to the department desk for pickup.'
+                                              )
+                                            }
+                                            className="px-2 py-0.5 bg-slate-100 hover:bg-teal-50 text-[10px] text-slate-600 hover:text-teal-800 rounded font-medium border border-slate-200 cursor-pointer"
+                                          >
+                                            ⚡ Ready for Pickup
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setInlineBody(
+                                                'Please submit a clearer photo of your student admission receipt or ID before we can release the equipment.'
+                                              )
+                                            }
+                                            className="px-2 py-0.5 bg-slate-100 hover:bg-amber-50 text-[10px] text-slate-600 hover:text-amber-800 rounded font-medium border border-slate-200 cursor-pointer"
+                                          >
+                                            ⚡ ID Clarification
+                                          </button>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 self-end">
+                                          <button
+                                            type="button"
+                                            onClick={() => setInlineMessageItemId(null)}
+                                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                                          >
+                                            Cancel
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={sendingMessage || !inlineBody.trim()}
+                                            onClick={() =>
+                                              handleSendDirectMessage(req.student_id, inlineTitle, inlineBody)
+                                            }
+                                            className="px-4 py-1.5 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+                                          >
+                                            <Send className="w-3.5 h-3.5" />
+                                            {sendingMessage ? 'Sending...' : 'Send to Student Portal'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           ))}
                         </tbody>
                       </table>
@@ -794,10 +965,11 @@ export default function SchoolDashboardPage() {
                         <button
                           type="button"
                           onClick={() => handleOpenMessageModal(s)}
-                          className="py-2 px-3 bg-slate-100 hover:bg-teal-50 text-slate-700 hover:text-teal-800 font-bold rounded-xl text-xs border border-slate-200 flex items-center gap-1 cursor-pointer"
-                          title="Message this student"
+                          className="py-2 px-3 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold rounded-xl text-xs border border-teal-200 flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                          title="Click to open message text field and send notification to student"
                         >
-                          <Mail className="w-3.5 h-3.5 text-teal-600" />
+                          <MessageSquare className="w-3.5 h-3.5 text-teal-600" />
+                          <span>Message Student</span>
                         </button>
                       </div>
                     </div>
@@ -957,6 +1129,193 @@ export default function SchoolDashboardPage() {
                 </form>
               </div>
             )}
+
+            {/* TAB 6: DEDICATED MESSAGE USERS & COMMUNICATIONS (Direct User Requirement: "by clicking on message every school can message users the school have to fill a text field which appears by clicking on messages and clicking send it will be sent to the user notification portal") */}
+            {activeTab === 'messages' && (
+              <div className="space-y-6 animate-fadeIn">
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-xs space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center shrink-0">
+                        <MessageSquare className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900">
+                          Direct Student Messaging & Notification Center
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          Fill in the text fields below to dispatch official notifications directly to any student user's portal
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={loadDashboardData}
+                      className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 self-start cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" /> Refresh Log
+                    </button>
+                  </div>
+
+                  {/* Messaging Composer Form */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 max-w-2xl">
+                    <div className="font-bold text-xs text-slate-900 uppercase tracking-wide flex items-center gap-2">
+                      <Send className="w-4 h-4 text-teal-600" />
+                      Compose New Message to Student
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        Select Recipient Student User *
+                      </label>
+                      <select
+                        value={selectedMessageRecipientId}
+                        onChange={(e) => setSelectedMessageRecipientId(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-semibold focus:outline-none focus:border-teal-600"
+                      >
+                        <option value="">-- Choose a Student User to Message --</option>
+                        {verifications.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.full_name} ({s.email}) — {s.school_name || 'Student'} [{s.grade || 'General'}]
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {selectedMessageRecipientId && (
+                      <div className="bg-white border border-teal-200 rounded-xl p-3 text-xs flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-teal-900">
+                            Recipient: {verifications.find((s) => s.id === selectedMessageRecipientId)?.full_name}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {verifications.find((s) => s.id === selectedMessageRecipientId)?.email} • {verifications.find((s) => s.id === selectedMessageRecipientId)?.school_name}
+                          </div>
+                        </div>
+                        <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">
+                          Recipient Selected
+                        </span>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        Notification Subject / Title *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={messageTitle}
+                        onChange={(e) => setMessageTitle(e.target.value)}
+                        placeholder="e.g. Action Required: Collect Your Reserved Equipment"
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-600"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs font-bold text-slate-700">
+                          Notification Message Text Field *
+                        </label>
+                        <span className="text-[10px] text-teal-700 font-semibold">
+                          Delivered directly to user's notification portal
+                        </span>
+                      </div>
+                      <textarea
+                        rows={4}
+                        required
+                        value={messageBody}
+                        onChange={(e) => setMessageBody(e.target.value)}
+                        placeholder="Type your official notification message here... (e.g. Your borrow request has been verified and approved. Please bring your physical ID card to Computer Lab B between 10:00 AM and 2:00 PM for pickup.)"
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-600 resize-none"
+                      />
+                    </div>
+
+                    {/* Quick Notification Template Chips */}
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] text-slate-600 font-bold">Quick Templates:</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMessageTitle('Equipment Ready for Handover');
+                            setMessageBody('Your requested equipment has been prepared and inspected. Please bring your physical ID card to the department desk for pickup.');
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-teal-50 text-slate-700 hover:text-teal-800 rounded-lg border border-slate-200 text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          ⚡ Ready for Handover
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMessageTitle('Document Verification Clarification Required');
+                            setMessageBody('We need a clearer photo of your student ID card or an official admission receipt before releasing the reserved asset.');
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-800 rounded-lg border border-slate-200 text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          ⚡ ID Clarification Required
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMessageTitle('Return Schedule Reminder');
+                            setMessageBody('Reminder: Your borrowed resource is scheduled for return check-in tomorrow. Please return all included cables and accessories in clean condition.');
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-800 rounded-lg border border-slate-200 text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          ⚡ Return Reminder
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={sendingMessage || !selectedMessageRecipientId || !messageBody.trim()}
+                      onClick={() => handleSendDirectMessage(selectedMessageRecipientId, messageTitle, messageBody)}
+                      className="w-full py-3 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold rounded-xl text-xs shadow-md shadow-teal-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <Send className="w-4 h-4" />
+                      {sendingMessage ? 'Sending to Student Portal...' : 'Send to Student Notification Portal'}
+                    </button>
+                  </div>
+
+                  {/* Dispatched Messages History */}
+                  <div className="border-t border-slate-100 pt-6 space-y-3">
+                    <h4 className="text-sm font-bold text-slate-900">
+                      Dispatched Notifications Log ({sentMessages.length})
+                    </h4>
+                    {sentMessages.length === 0 ? (
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500">
+                        No messages sent yet. Use the composer above or the "Message" button on any request to dispatch notifications.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50">
+                        {sentMessages.map((msg) => (
+                          <div key={msg.id} className="p-4 hover:bg-white transition-colors space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-slate-900">{msg.title}</span>
+                              <span className="text-[11px] text-slate-400 font-mono">
+                                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(msg.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-teal-700 font-semibold">
+                              To Student: {msg.recipient_name} ({msg.recipient_email}) — {msg.recipient_school}
+                            </div>
+                            <p className="text-xs text-slate-600 leading-relaxed pt-0.5">
+                              {msg.message}
+                            </p>
+                            <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1 pt-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Delivered to User Notification Portal
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -968,73 +1327,6 @@ export default function SchoolDashboardPage() {
         schoolId={schoolId}
         onSuccess={() => loadDashboardData()}
       />
-
-      {/* MODAL: DIRECT MESSAGE TO STUDENT (Direct User Requirement: "all schools able to message seperately to users through notification center") */}
-      {messageStudentModalOpen && targetStudentForMessage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="relative w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 text-slate-800">
-            <button
-              onClick={() => setMessageStudentModalOpen(false)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center">
-                <Send className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900">Message Student Directly</h3>
-                <p className="text-xs text-slate-500">Delivered directly to {targetStudentForMessage.full_name}'s notification center</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleSendMessageToStudent} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Notification Subject / Title</label>
-                <input
-                  type="text"
-                  required
-                  value={messageTitle}
-                  onChange={(e) => setMessageTitle(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-teal-600 focus:bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Message Content</label>
-                <textarea
-                  rows={4}
-                  required
-                  value={messageBody}
-                  onChange={(e) => setMessageBody(e.target.value)}
-                  placeholder="e.g. Your compound microscope is ready at Science Lab Room 102. Please bring your student ID card."
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-teal-600 focus:bg-white resize-none"
-                />
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="submit"
-                  disabled={sendingMessage}
-                  className="flex-1 py-3 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  {sendingMessage ? 'Sending...' : 'Send to Student'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMessageStudentModalOpen(false)}
-                  className="py-3 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* MODAL: STUDENT ID CARD INSPECTION (Direct User Requirement: "if i give an input as id card any of the school portal cannot see the id card, this should be fixed") */}
       {previewStudent && (
@@ -1228,6 +1520,105 @@ export default function SchoolDashboardPage() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* DIRECT STUDENT NOTIFICATION / MESSAGE MODAL */}
+      {messageStudentModalOpen && targetStudentForMessage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-lg bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 sm:p-7 text-slate-800">
+            {/* Close Button */}
+            <button
+              onClick={() => setMessageStudentModalOpen(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100 transition-colors"
+            >
+              <XCircle className="w-5 h-5" />
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-5 border-b border-slate-100 pb-4">
+              <div className="w-11 h-11 rounded-2xl bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center shrink-0">
+                <MessageSquare className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Send Direct Notification to Student
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Dispatched in real-time to {targetStudentForMessage.full_name}'s notification portal
+                </p>
+              </div>
+            </div>
+
+            {/* Recipient Details Card */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 mb-4 text-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-900 text-sm">
+                  {targetStudentForMessage.full_name}
+                </span>
+                <span className="text-[11px] font-semibold text-teal-700">
+                  {targetStudentForMessage.school_name || 'Student Account'}
+                </span>
+              </div>
+              <div className="text-slate-500 text-[11px]">
+                {targetStudentForMessage.email} {targetStudentForMessage.grade ? `• ${targetStudentForMessage.grade}` : ''}
+              </div>
+              {targetStudentForMessage.resource_title && (
+                <div className="text-teal-800 font-medium text-[11px] pt-1.5 border-t border-slate-200 mt-1">
+                  Regarding Asset: <strong>{targetStudentForMessage.resource_title}</strong>
+                </div>
+              )}
+            </div>
+
+            {/* Message Form */}
+            <form onSubmit={handleSendMessageToStudent} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Notification Title / Subject:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={messageTitle}
+                  onChange={(e) => setMessageTitle(e.target.value)}
+                  placeholder="e.g. Action Required: Collect Your Reserved Equipment"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-600 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Notification Message Body:
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  value={messageBody}
+                  onChange={(e) => setMessageBody(e.target.value)}
+                  placeholder="Type your official message here... (e.g. Your borrow request has been verified. Please bring your physical ID card to Computer Lab B between 10:00 AM and 2:00 PM for pickup.)"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-600 focus:bg-white resize-none"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={sendingMessage || !messageBody.trim()}
+                  className="flex-1 py-3 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold rounded-xl text-xs shadow-md shadow-teal-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-4 h-4" />
+                  {sendingMessage ? 'Sending Notification...' : 'Send to Student Notification Portal'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMessageStudentModalOpen(false)}
+                  className="py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

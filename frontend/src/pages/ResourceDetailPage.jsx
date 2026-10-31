@@ -12,11 +12,14 @@ import {
   MapPin,
   Check,
   Plus,
-  AlertTriangle
+  AlertTriangle,
+  Zap,
+  QrCode
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
+import QRModal from '../components/QRModal';
 
 export default function ResourceDetailPage() {
   const { id } = useParams();
@@ -24,6 +27,9 @@ export default function ResourceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedDays, setSelectedDays] = useState(7);
+
+  const [requestSubmitting, setRequestSubmitting] = useState(false);
+  const [qrModalItem, setQrModalItem] = useState(null);
 
   const { addToCart, isInCart } = useCart();
   const { user } = useAuth();
@@ -34,6 +40,26 @@ export default function ResourceDetailPage() {
   useEffect(() => {
     fetchDetail();
   }, [id]);
+
+  const handleDirectBorrow = async () => {
+    if (!user) {
+      navigate('/login?portal=student');
+      return;
+    }
+    setRequestSubmitting(true);
+    try {
+      const res = await api.bookings.create({
+        items: [{ resource_id: data.resource.id, days_requested: selectedDays }],
+        notes: `Direct request for ${data.resource.title}`,
+      });
+      alert(`Borrow request for '${data.resource.title}' submitted! It has reached ${data.resource.owning_school_name || 'the owning school'} coordinator for verification. Your official QR Handover Pass will be issued and delivered to your notifications once verified and approved.`);
+      navigate('/student/profile');
+    } catch (err) {
+      alert(err.message || 'Request failed');
+    } finally {
+      setRequestSubmitting(false);
+    }
+  };
 
   const fetchDetail = async () => {
     setLoading(true);
@@ -183,26 +209,38 @@ export default function ResourceDetailPage() {
                   </select>
                 </div>
 
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
                   <button
                     type="button"
-                    disabled={!isAvailable}
-                    onClick={() => addToCart(resource, selectedDays)}
+                    disabled={!isAvailable || requestSubmitting}
+                    onClick={handleDirectBorrow}
                     className={`flex-1 py-3.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer ${
-                      inCart
-                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                        : isAvailable
+                      isAvailable
                         ? 'bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white shadow-teal-600/20'
                         : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                     }`}
                   >
+                    <Zap className="w-4 h-4" />
+                    {requestSubmitting ? 'Dispatching Request...' : '⚡ Request Resource Now'}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!isAvailable}
+                    onClick={() => addToCart(resource, selectedDays)}
+                    className={`py-3.5 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all border cursor-pointer ${
+                      inCart
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                    }`}
+                  >
                     {inCart ? (
                       <>
-                        <Check className="w-4 h-4 text-emerald-700" /> Added to Session Cart
+                        <Check className="w-4 h-4 text-emerald-700" /> In Session Cart
                       </>
                     ) : (
                       <>
-                        <Plus className="w-4 h-4" /> Add to Session Cart
+                        <Plus className="w-4 h-4" /> Add to Multi-Cart
                       </>
                     )}
                   </button>
@@ -270,6 +308,15 @@ export default function ResourceDetailPage() {
           </div>
         )}
       </div>
+
+      {/* QR PASS MODAL */}
+      {qrModalItem && (
+        <QRModal
+          isOpen={!!qrModalItem}
+          onClose={() => setQrModalItem(null)}
+          bookingItem={qrModalItem}
+        />
+      )}
     </div>
   );
 }

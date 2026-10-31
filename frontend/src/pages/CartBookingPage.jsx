@@ -65,14 +65,7 @@ export default function CartBookingPage() {
     }
 
     if (user.role !== 'student') {
-      setError('Please log in with a verified student account to complete bookings.');
-      return;
-    }
-
-    if (user.verification_status !== 'Verified') {
-      setError(
-        `Borrowing is blocked: Your student account verification status is '${user.verification_status}'. An institutional coordinator must verify your uploaded documents before you can borrow equipment.`
-      );
+      setError('Please log in with a student account to complete bookings.');
       return;
     }
 

@@ -1,4 +1,4 @@
-const API_BASE = '/api';
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '') + '/api';
 
 function getAuthHeader() {
   const token = localStorage.getItem('libshare_token');
@@ -96,6 +96,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ student_id: studentId, title, message }),
       }),
+    getSentMessages: (schoolId) => request(`/school/${schoolId}/sent-messages`),
   },
 
   // QR Handover & Return

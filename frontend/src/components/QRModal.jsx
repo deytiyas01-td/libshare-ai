@@ -2,16 +2,17 @@ import React, { useState, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, QrCode, Clock, ShieldCheck, Copy, Check, Download, Sparkles } from 'lucide-react';
 
-export default function QRModal({ isOpen, onClose, item, qrTokenOverride, resourceTitleOverride }) {
+export default function QRModal({ isOpen, onClose, item, bookingItem, qrTokenOverride, resourceTitleOverride }) {
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   if (!isOpen) return null;
 
-  const qrValue = qrTokenOverride || item?.qr_token || `LIBSHARE-${item?.id || 'PASS'}`;
-  const resourceTitle = resourceTitleOverride || item?.resource_title || 'Educational Resource';
-  const schoolName = item?.owning_school_name || item?.owning_school_id || 'Partner School';
-  const isReturn = item?.qr_action === 'RETURN' || item?.status === 'Collected';
+  const activeItem = item || bookingItem;
+  const qrValue = qrTokenOverride || activeItem?.qr_token || `LIBSHARE-${activeItem?.id || 'PASS'}`;
+  const resourceTitle = resourceTitleOverride || activeItem?.resource_title || 'Educational Resource';
+  const schoolName = activeItem?.owning_school_name || activeItem?.owning_school_id || 'Partner School';
+  const isReturn = activeItem?.qr_action === 'RETURN' || activeItem?.status === 'Collected';
   const actionTitle = isReturn ? 'Return Handover Pass' : 'Collection Handover Pass';
 
   const handleCopy = () => {

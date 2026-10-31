@@ -419,10 +419,70 @@ def delete_resource(
     db.commit()
     return {"message": "Resource deleted successfully"}
 
-# ==========================================
-# MULTI-RESOURCE BOOKING & ROUTING WORKFLOW
-# ==========================================
-@app.post("/api/bookings")
+
+# ------------------------------------------
+# SCHOOL MESSAGE ENDPOINTS
+# ------------------------------------------
+@app.post("/api/school/{school_id}/message-student")
+def send_message_to_student(
+    school_id: str,
+    msg: schemas.SendMessageRequest,
+    current_admin: dict = Depends(require_school_admin),
+    db: Session = Depends(get_db)
+):
+    """Send a direct message (notification) from a school admin to a student.
+    The message appears in the student's notification list and optionally can carry a QR token.
+    """
+    # Verify admin belongs to the target school
+    if current_admin["school_id"] != school_id:
+        raise HTTPException(status_code=403, detail="Access Denied: Wrong school.")
+    # Verify student exists
+    student = db.query(models.Profile).filter(models.Profile.id == msg.student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+    # Create notification of type direct_message
+    notification = models.Notification(
+        id=str(uuid.uuid4()),
+        user_id=student.id,
+        title=msg.title,
+        message=msg.message,
+        type="direct_message",
+        sender_school_id=school_id,
+        sender_name=current_admin.get("name", "School Admin"),
+        link="/student/profile",
+        created_at=datetime.utcnow()
+    )
+    db.add(notification)
+    db.commit()
+    return {"message": "Notification sent to student", "notification_id": notification.id}
+
+@app.get("/api/school/{school_id}/sent-messages")
+def get_sent_messages(
+    school_id: str,
+    current_admin: dict = Depends(require_school_admin),
+    db: Session = Depends(get_db)
+):
+    """Retrieve messages sent by this school admin to students (direct_message notifications)."""
+    if current_admin["school_id"] != school_id:
+        raise HTTPException(status_code=403, detail="Access Denied: Wrong school.")
+    msgs = db.query(models.Notification).filter(
+        models.Notification.sender_school_id == school_id,
+        models.Notification.type == "direct_message"
+    ).order_by(models.Notification.created_at.desc()).all()
+    result = []
+    for n in msgs:
+        result.append({
+            "id": n.id,
+            "title": n.title,
+            "message": n.message,
+            "qr_token": n.qr_token,
+            "link": n.link,
+            "created_at": n.created_at,
+            "is_read": n.is_read,
+            "sender_name": n.sender_name,
+        })
+    return result
+
 def create_booking(
     booking_req: schemas.BookingCreateRequest,
     current_student: dict = Depends(require_verified_student),
@@ -476,9 +536,9 @@ def create_booking(
             status="Requested",
             start_date=datetime.utcnow(),
             due_date=due_date,
-            qr_token=token_hash,
-            qr_action="COLLECTION",
-            qr_expires_at=datetime.utcnow() + timedelta(days=5),
+            qr_token="",  # QR code is ONLY generated after school coordinator verification
+            qr_action="PENDING_APPROVAL",
+            qr_expires_at=None,
             pre_collection_condition="Good"
         )
 
@@ -489,7 +549,7 @@ def create_booking(
             "resource_title": res.title,
             "owning_school_id": res.owning_school_id,
             "due_date": due_date.isoformat(),
-            "qr_token": token_hash
+            "qr_token": ""
         })
 
     db.commit()
@@ -498,22 +558,24 @@ def create_booking(
     for school_id in affected_schools:
         school_item_count = sum(1 for item in created_items if item["owning_school_id"] == school_id)
         db.add(models.Notification(
+            id=str(uuid.uuid4()),
             school_id=school_id,
             title=f"New Incoming Resource Request ({school_item_count} items)",
-            message=f"{student.full_name} from {student.school.name if student.school else 'Partner School'} submitted a borrow request.",
+            message=f"{student.full_name} from {student.school.name if student.school else 'Partner School'} submitted a borrow request. Review ID and approve to issue QR pass.",
             type="booking_status",
             link=f"/school/{school_id}/requests"
         ))
 
-    # Notify student with their QR tokens for download & verification pass
+    # Notify student: Request submitted, awaiting school verification before QR is issued
     for item_data in created_items:
         db.add(models.Notification(
+            id=str(uuid.uuid4()),
             user_id=student_id,
-            title=f"Booking QR Pass: {item_data['resource_title']}",
-            message=f"Request submitted for '{item_data['resource_title']}'. Your cryptographic QR code pass is generated and ready to view or download.",
-            qr_token=item_data["qr_token"],
+            title=f"Request Submitted: {item_data['resource_title']}",
+            message=f"Request submitted for '{item_data['resource_title']}'. It has been routed to the school coordinator for verification. Your official QR Handover Pass will be issued once approved.",
+            qr_token=None,
             type="booking_status",
-            link="/student/my-bookings"
+            link="/student/profile"
         ))
 
     db.commit()
@@ -648,21 +710,38 @@ def decide_request(
         if res.available_quantity < 1:
             raise HTTPException(status_code=400, detail="Cannot approve: Resource available quantity is 0.")
 
+        # Generate official cryptographic QR token upon school verification
+        token_hash = f"QR-COLLECT-{uuid.uuid4().hex[:10].upper()}"
+        bitem.qr_token = token_hash
         bitem.status = "Ready for Collection"
         bitem.qr_action = "COLLECTION"
+        bitem.qr_expires_at = datetime.utcnow() + timedelta(days=5)
+
         res.available_quantity -= 1
         if res.available_quantity == 0:
             res.status = "Fully Booked"
 
+        # Auto-verify student when their request is approved by school coordinator
+        student = db.query(models.Profile).filter(models.Profile.id == bitem.student_id).first()
+        if student and student.verification_status != "Verified":
+            student.verification_status = "Verified"
+            student.verification_notes = f"Verified upon equipment approval by {current_admin['name']}."
+
+        school = db.query(models.School).filter(models.School.id == school_id).first()
+        school_name = school.name if school else current_admin["name"]
+
+        # Send QR code pass to the student ONLY AFTER verification
         db.add(models.Notification(
+            id=str(uuid.uuid4()),
             user_id=bitem.student_id,
-            title=f"Request Approved: {res.title}",
-            message=f"{current_admin['name']} approved your request for '{res.title}'. Your QR Handover Pass is active for pickup and download.",
+            title=f"Request Verified & Approved: {res.title}",
+            message=f"{current_admin['name']} from {school_name} has verified your borrow request for '{res.title}'. Your official QR Handover Pass is now active. View or download your QR code pass to collect the equipment.",
             qr_token=bitem.qr_token,
             sender_school_id=school_id,
-            sender_name=current_admin["name"],
+            sender_name=school_name,
             type="collection",
-            link="/student/my-bookings"
+            link="/student/profile",
+            created_at=datetime.utcnow()
         ))
 
     elif decision.action.upper() == "REJECT":
@@ -708,13 +787,22 @@ def verify_and_handover(
             detail=f"Mismatched Institution: This item belongs to {bitem.owning_school_id}, not your school."
         )
 
-    if bitem.status not in ["Approved", "Ready for Collection"]:
+    res = db.query(models.Resource).filter(models.Resource.id == bitem.resource_id).first()
+
+    if bitem.status not in ["Approved", "Ready for Collection", "Requested"]:
         if bitem.status == "Collected":
             raise HTTPException(status_code=400, detail="Duplicate Scan Blocked: This resource has already been collected.")
         elif bitem.status == "Returned":
             raise HTTPException(status_code=400, detail="This item has already completed its borrowing cycle and was returned.")
         else:
             raise HTTPException(status_code=400, detail=f"Cannot hand over resource with status '{bitem.status}'.")
+
+    # If item was still in 'Requested' status, deduct inventory now upon handover
+    if bitem.status == "Requested" and res:
+        if res.available_quantity > 0:
+            res.available_quantity -= 1
+            if res.available_quantity == 0:
+                res.status = "Fully Booked"
 
     # Check token expiration
     if bitem.qr_expires_at and datetime.utcnow() > bitem.qr_expires_at:
@@ -858,7 +946,11 @@ def lookup_qr_token(
     school ID card document, and the corresponding resource details.
     """
     token_str = qr_token.strip()
-    bitem = db.query(models.BookingItem).filter(models.BookingItem.qr_token == token_str).first()
+    bitem = db.query(models.BookingItem).filter(
+        (models.BookingItem.qr_token == token_str) |
+        (models.BookingItem.id == token_str) |
+        (models.BookingItem.qr_token.ilike(f"%{token_str}%"))
+    ).first()
     if not bitem:
         raise HTTPException(status_code=404, detail="No matching booking item found for this QR token.")
 
@@ -921,18 +1013,54 @@ def message_student(
     school_name = school.name if school else current_admin["name"]
 
     notif = models.Notification(
+        id=str(uuid.uuid4()),
         user_id=student.id,
         sender_school_id=school_id,
         sender_name=school_name,
         title=msg_req.title,
         message=msg_req.message,
         type="direct_message",
-        link="/student/profile"
+        link="/student/profile",
+        created_at=datetime.utcnow()
     )
     db.add(notif)
     db.commit()
 
-    return {"message": "Notification dispatched directly to student.", "student_name": student.full_name}
+    return {
+        "success": True,
+        "message": f"Notification successfully dispatched to {student.full_name}'s notification portal.",
+        "student_name": student.full_name,
+        "notification_id": notif.id
+    }
+
+@app.get("/api/school/{school_id}/sent-messages")
+def get_sent_messages(
+    school_id: str,
+    current_admin: dict = Depends(require_school_admin),
+    db: Session = Depends(get_db)
+):
+    if current_admin["school_id"] != school_id:
+        raise HTTPException(status_code=403, detail="Access Denied.")
+
+    messages = db.query(models.Notification).filter(
+        models.Notification.sender_school_id == school_id
+    ).order_by(models.Notification.created_at.desc()).all()
+
+    results = []
+    for m in messages:
+        student = db.query(models.Profile).filter(models.Profile.id == m.user_id).first()
+        results.append({
+            "id": m.id,
+            "title": m.title,
+            "message": m.message,
+            "recipient_id": m.user_id,
+            "recipient_name": student.full_name if student else "Student User",
+            "recipient_email": student.email if student else "",
+            "recipient_school": student.school.name if (student and student.school) else "Partner School",
+            "created_at": m.created_at
+        })
+
+    return results
 
 @app.get("/api/school/{school_id}/students/verification")
 def list_pending_verifications(

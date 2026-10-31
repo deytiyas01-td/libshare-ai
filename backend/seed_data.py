@@ -449,7 +449,23 @@ def seed_database():
         pre_collection_condition="Good - minor scratch on exterior case, battery 98%"
     )
 
-    db.add_all([booking_item_1, booking_item_2, booking_item_3])
+    # Active Incoming Request for School A: Dell Laptop
+    booking_item_4 = models.BookingItem(
+        id="bitem-demo-04",
+        booking_id="book-demo-01",
+        resource_id="res-a-03", # Dell Inspiron Laptop
+        owning_school_id="school-a",
+        student_id="student-priya-02",
+        status="Requested",
+        start_date=datetime.utcnow(),
+        due_date=datetime.utcnow() + timedelta(days=7),
+        qr_token="QR-SECURE-COLLECT-LAPTOP-5521",
+        qr_action="COLLECTION",
+        qr_expires_at=datetime.utcnow() + timedelta(days=4),
+        pre_collection_condition="Good"
+    )
+
+    db.add_all([booking_item_1, booking_item_2, booking_item_3, booking_item_4])
     db.commit()
 
     # 5. Notifications

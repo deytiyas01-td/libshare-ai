@@ -97,9 +97,6 @@ def require_verified_student(current_user: dict = Depends(get_current_user)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only students can access this feature."
         )
-    if current_user.get("verification_status") != "Verified":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Borrowing blocked: Student account verification status is '{current_user.get('verification_status')}'. An institutional administrator must verify your credentials first."
-        )
+    # Registered students (including Pending verification) are permitted to submit borrow requests
+    # so partner school administrators can review both the equipment request and the student's uploaded ID document.
     return current_user

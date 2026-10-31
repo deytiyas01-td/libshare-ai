@@ -35,6 +35,19 @@ export default function ScannerModal({ isOpen, onClose, schoolId, onSuccess }) {
   // Scanned Student Profile state
   const [scannedData, setScannedData] = useState(null);
   const [idPreviewOpen, setIdPreviewOpen] = useState(false);
+  const [availableSchoolTokens, setAvailableSchoolTokens] = useState([]);
+
+  useEffect(() => {
+    if (isOpen && schoolId) {
+      api.school.getRequests(schoolId)
+        .then((items) => {
+          if (Array.isArray(items)) {
+            setAvailableSchoolTokens(items.filter((item) => item.qr_token));
+          }
+        })
+        .catch((e) => console.error('Failed to load active school tokens:', e));
+    }
+  }, [isOpen, schoolId]);
 
   useEffect(() => {
     let scanner = null;
@@ -296,30 +309,55 @@ export default function ScannerModal({ isOpen, onClose, schoolId, onSuccess }) {
                   </div>
                 </div>
 
-                {/* Quick Demo Tokens */}
+                {/* Quick Tokens for This School */}
                 <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-[11px]">
-                  <span className="text-slate-600 font-semibold">Quick Demo Tokens:</span>
+                  <span className="text-slate-700 font-bold">Active Station Passes for Quick Testing:</span>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setManualCode('QR-SECURE-COLLECT-SCHA-78912');
-                        handleLookup('QR-SECURE-COLLECT-SCHA-78912');
-                      }}
-                      className="px-2.5 py-1 bg-white hover:bg-teal-50 text-teal-800 rounded-lg border border-teal-200 text-[11px] font-mono font-medium shadow-sm"
-                    >
-                      ⚡ Handover Pass (Arjun - Modern Physics)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setManualCode('QR-SECURE-RETURN-SCHA-43210');
-                        handleLookup('QR-SECURE-RETURN-SCHA-43210');
-                      }}
-                      className="px-2.5 py-1 bg-white hover:bg-blue-50 text-blue-800 rounded-lg border border-blue-200 text-[11px] font-mono font-medium shadow-sm"
-                    >
-                      ⚡ Return Pass (Rohan - Dell Laptop)
-                    </button>
+                    {availableSchoolTokens.length > 0 ? (
+                      availableSchoolTokens.slice(0, 4).map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setManualCode(item.qr_token);
+                            handleLookup(item.qr_token);
+                          }}
+                          className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-medium shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+                            item.status === 'Requested'
+                              ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
+                              : item.status === 'Collected'
+                              ? 'bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-300'
+                              : 'bg-white hover:bg-teal-50 text-teal-900 border-teal-300'
+                          }`}
+                        >
+                          <span>⚡ {item.student_name}</span>
+                          <span className="text-[10px] opacity-75">({item.resource_title?.split(' ')[0]} - {item.status})</span>
+                        </button>
+                      ))
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setManualCode('QR-TIYAS-LAPTOP-93E429');
+                            handleLookup('QR-TIYAS-LAPTOP-93E429');
+                          }}
+                          className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg border border-amber-300 text-[11px] font-mono font-medium shadow-xs cursor-pointer"
+                        >
+                          ⚡ Tiyas Dey (Dell Laptop - Requested)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setManualCode('QR-SECURE-RETURN-SCHA-43210');
+                            handleLookup('QR-SECURE-RETURN-SCHA-43210');
+                          }}
+                          className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-900 rounded-lg border border-blue-300 text-[11px] font-mono font-medium shadow-xs cursor-pointer"
+                        >
+                          ⚡ Rohan Das (Return Check-in)
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 

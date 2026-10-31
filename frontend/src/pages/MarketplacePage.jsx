@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Search,
   Filter,
@@ -16,11 +16,16 @@ import {
   Wrench,
   AlertCircle,
   Plus,
-  Check
+  Check,
+  Zap,
+  QrCode,
+  X,
+  CheckCircle2
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
+import QRModal from '../components/QRModal';
 
 const CATEGORIES = [
   { name: 'All Categories', icon: Filter },
@@ -49,6 +54,47 @@ export default function MarketplacePage() {
 
   const { addToCart, isInCart } = useCart();
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // Quick 1-Click Direct Request modal state
+  const [quickItem, setQuickItem] = useState(null);
+  const [quickDays, setQuickDays] = useState(7);
+  const [quickNotes, setQuickNotes] = useState('');
+  const [quickSubmitting, setQuickSubmitting] = useState(false);
+  const [quickSuccess, setQuickSuccess] = useState(null);
+  const [activeQRModalItem, setActiveQRModalItem] = useState(null);
+
+  const handleStartQuickRequest = (item) => {
+    if (!user) {
+      navigate('/login?portal=student');
+      return;
+    }
+    setQuickItem(item);
+    setQuickDays(7);
+    setQuickNotes('');
+    setQuickSuccess(null);
+  };
+
+  const handleConfirmQuickRequest = async (e) => {
+    e.preventDefault();
+    if (!quickItem) return;
+    setQuickSubmitting(true);
+    try {
+      const res = await api.bookings.create({
+        items: [{ resource_id: quickItem.id, days_requested: quickDays }],
+        notes: quickNotes.trim() || 'Direct borrow request submitted via Marketplace',
+      });
+      setQuickSuccess({
+        ...res,
+        item: quickItem,
+      });
+      fetchResources();
+    } catch (err) {
+      alert(err.message || 'Borrow request failed');
+    } finally {
+      setQuickSubmitting(false);
+    }
+  };
 
   const isSchoolAdmin = user && user.role === 'school_admin';
 
@@ -340,34 +386,40 @@ export default function MarketplacePage() {
                   <div className="p-5 pt-0 flex items-center gap-2">
                     <Link
                       to={`/resources/${item.id}`}
-                      className="flex-1 py-2.5 text-center text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition-colors border border-slate-200 cursor-pointer"
+                      className="py-2.5 px-3 text-center text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition-colors border border-slate-200 cursor-pointer"
                     >
-                      View Details
+                      Details
                     </Link>
 
                     {!isSchoolAdmin && (
-                      <button
-                        type="button"
-                        disabled={!isAvailable}
-                        onClick={() => addToCart(item, 7)}
-                        className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                          inCart
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                            : isAvailable
-                            ? 'bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                        }`}
-                      >
-                        {inCart ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-700" /> In Session
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-3.5 h-3.5" /> Book
-                          </>
-                        )}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          disabled={!isAvailable}
+                          onClick={() => handleStartQuickRequest(item)}
+                          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                            isAvailable
+                              ? 'bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white shadow-xs'
+                              : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                          }`}
+                        >
+                          <Zap className="w-3.5 h-3.5" /> Request
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={!isAvailable}
+                          onClick={() => addToCart(item, 7)}
+                          title="Add to multi-resource session cart"
+                          className={`p-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            inCart
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                          }`}
+                        >
+                          {inCart ? <Check className="w-4 h-4 text-emerald-700" /> : <Plus className="w-4 h-4" />}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -376,6 +428,128 @@ export default function MarketplacePage() {
           </div>
         )}
       </div>
+
+      {/* QUICK 1-CLICK BORROW REQUEST MODAL */}
+      {quickItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-lg bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 sm:p-7 text-slate-800">
+            <button
+              onClick={() => {
+                setQuickItem(null);
+                setQuickSuccess(null);
+              }}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {quickSuccess ? (
+              <div className="text-center space-y-4 py-2 animate-fadeIn">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Borrow Request Submitted!</h3>
+                  <p className="text-xs text-slate-600 mt-1">
+                    Your request for <strong>{quickItem.title}</strong> has reached <strong>{quickItem.owning_school_name || quickItem.owning_school_id}</strong>'s coordinator desk.
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left text-xs space-y-1.5 text-slate-700">
+                  <div className="font-bold text-teal-800">📋 Awaiting Institutional Coordinator Verification</div>
+                  <p className="text-[11px] text-slate-500">
+                    The school coordinator is reviewing your request and uploaded document. Once approved, your official QR Handover Pass will be automatically generated and sent to your notifications portal.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                  <Link
+                    to="/student/profile"
+                    onClick={() => {
+                      setQuickItem(null);
+                      setQuickSuccess(null);
+                    }}
+                    className="flex-1 py-3 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-teal-600/20"
+                  >
+                    View Status in My Profile →
+                  </Link>
+                  <button
+                    onClick={() => {
+                      setQuickItem(null);
+                      setQuickSuccess(null);
+                    }}
+                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-xs text-center border border-slate-200"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleConfirmQuickRequest} className="space-y-4">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center font-bold text-xl shrink-0">
+                    <Zap className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Request Educational Resource</h3>
+                    <p className="text-xs text-teal-700 font-semibold">{quickItem.owning_school_name || quickItem.owning_school_id}</p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs space-y-1">
+                  <div className="font-bold text-slate-900">{quickItem.title}</div>
+                  <div className="text-slate-500">{quickItem.category} • Location: {quickItem.location_room || 'Main Campus'}</div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Borrowing Loan Duration:
+                  </label>
+                  <select
+                    value={quickDays}
+                    onChange={(e) => setQuickDays(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-teal-600"
+                  >
+                    <option value={3}>3 Days (Short Lab Session)</option>
+                    <option value={7}>7 Days (Standard Academic Loan)</option>
+                    <option value={14}>14 Days (Extended Research Term)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Purpose / Notes for Institutional Staff (Optional):
+                  </label>
+                  <input
+                    type="text"
+                    value={quickNotes}
+                    onChange={(e) => setQuickNotes(e.target.value)}
+                    placeholder="e.g. For National Hackathon robotics development"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-teal-600 focus:bg-white"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={quickSubmitting}
+                  className="w-full py-3 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold rounded-xl text-xs shadow-md shadow-teal-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {quickSubmitting ? 'Submitting to School...' : `Submit Borrow Request to ${quickItem.owning_school_name || 'School'}`}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* QR MODAL */}
+      {activeQRModalItem && (
+        <QRModal
+          isOpen={!!activeQRModalItem}
+          onClose={() => setActiveQRModalItem(null)}
+          bookingItem={activeQRModalItem}
+        />
+      )}
     </div>
   );
 }
