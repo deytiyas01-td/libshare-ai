@@ -42,7 +42,7 @@ def health_check():
     return {
         "status": "healthy",
         "service": "LibShare AI Backend",
-        "version": "1.0.0",
+        "version": "1.0.3-hotfix",
         "problem_statement": "Unlock Underused Equipment and Spaces",
         "hackathon": "CodeVerse India National-Level Hackathon",
         "ai_engine": "TF-IDF + Cosine Similarity Active"
